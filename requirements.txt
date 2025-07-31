@@ -1,0 +1,27 @@
+Flask
+Flask-CORS
+ffmpeg-python
+
+# Image processing dependencies (minimal for now)
+Pillow>=10.0.0
+
+# Document processing dependencies
+PyMuPDF>=1.23.0
+python-docx>=0.8.11
+ebooklib>=0.18
+beautifulsoup4>=4.12.0
+pillow-heif>=0.10.0
+
+# Note: System dependencies required:
+# - FFmpeg must be installed for audio/video conversion
+#   Install FFmpeg: https://ffmpeg.org/download.html
+# - For full image conversion features, install additional dependencies:
+#   pip install Wand cairosvg pillow-heif
+# - ImageMagick must be installed for advanced image formats (EPS, PSD)
+#   Windows: https://imagemagick.org/script/download.php#windows
+#   macOS: brew install imagemagick  
+#   Ubuntu/Debian: sudo apt install imagemagick libmagickwand-dev
+# - Cairo libraries for SVG conversion (cairosvg)
+#   Windows: Included with cairosvg
+#   macOS: brew install cairo
+#   Ubuntu/Debian: sudo apt install libcairo2-dev 
