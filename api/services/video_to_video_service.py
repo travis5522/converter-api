@@ -173,11 +173,12 @@ def convert_video(file, input_body):
         # Clean up temp file
         os.remove(input_path)
 
-        # Return export URL (relative to /static/videos)
+        # Return export URL (using proper /export endpoint)
         return {
             'success': True,
-            'export_url': f"/static/videos/{output_filename}",
-            'download_url': f"/download/videos/{output_filename}",
+            'export_url': f"/export/videos/{output_filename}?ngrok-skip-browser-warning=true",
+            'download_url': f"/download/videos/{output_filename}?ngrok-skip-browser-warning=true",
+            'ngrok_download_url': f"/ngrok-download/videos/{output_filename}?ngrok-skip-browser-warning=true",
             'filename': output_filename,
             'output_format': output_format,
             'message': 'Video conversion completed successfully'

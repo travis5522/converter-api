@@ -1,4 +1,4 @@
-from flask import Flask, request, make_response, send_from_directory, jsonify
+from flask import Flask, request, make_response, send_file, send_from_directory, jsonify
 from flask_cors import CORS
 from api.controller.video_to_video_controller import video_to_video_bp
 from api.controller.video_to_audio_controller import video_to_audio_bp
@@ -7,20 +7,57 @@ from api.controller.image_converter_controller import image_converter_bp
 from api.controller.document_converter_controller import document_converter_bp
 from api.controller.gif_converter_controller import gif_converter_bp
 import os
+import mimetypes
+from flask import Response
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'), static_url_path='/static')
 
 # Initialize CORS
-CORS(app, 
-     origins=['http://localhost:8080'],
-     supports_credentials=True,
-     allow_headers=['*'],
-     methods=['GET', 'POST', 'OPTIONS', 'HEAD'])
+CORS(app)
 
-# Download endpoint for converted files
-@app.route('/download/<file_type>/<filename>')
-def download_file(file_type, filename):
-    """Download converted files"""
+# Middleware to handle ngrok browser warning
+@app.before_request
+def handle_ngrok_headers():
+    """Skip ngrok browser warning by checking for ngrok headers"""
+    # Skip ngrok warning by detecting ngrok-specific headers
+    if request.headers.get('ngrok-skip-browser-warning'):
+        pass
+    # Also check for User-Agent containing ngrok
+    user_agent = request.headers.get('User-Agent', '')
+    if 'ngrok' in user_agent.lower():
+        pass
+
+@app.after_request
+def after_request(response):
+    """Add headers to all responses"""
+    # Add ngrok header to skip browser warning
+    response.headers['ngrok-skip-browser-warning'] = 'true'
+    
+    # Ensure CORS headers are present for all responses
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, HEAD'
+    response.headers['Access-Control-Allow-Headers'] = '*'
+    response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition'
+    
+    # Only add cache control if it's not a download endpoint
+    # Download endpoints set their own cache control headers
+    if not (request.endpoint and ('download' in request.endpoint or 'export' in request.endpoint)):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    
+    return response
+
+# Test endpoint to verify CORS is working
+@app.route('/test-cors', methods=['GET'])
+def test_cors():
+    """Test endpoint to verify CORS configuration"""
+    return {'message': 'CORS is working correctly!', 'status': 'success'}
+
+# Enhanced export endpoint with proper CORS headers
+@app.route('/export/<file_type>/<filename>')
+def export_file(file_type, filename):
+    """Export converted files with proper CORS headers (alternative to static serving)"""
     static_dir = os.path.join(os.path.dirname(__file__), 'static')
     
     if file_type == 'images':
@@ -40,13 +77,10 @@ def download_file(file_type, filename):
     if not os.path.exists(file_path):
         return {'error': 'File not found'}, 404
     
-    return send_from_directory(directory, filename, as_attachment=True)
-
-# Test endpoint to verify CORS is working
-@app.route('/test-cors', methods=['GET'])
-def test_cors():
-    """Test endpoint to verify CORS configuration"""
-    return {'message': 'CORS is working correctly!', 'status': 'success'}
+    return send_file(
+        file_path,
+        as_attachment=True  # This allows inline viewing
+    )
 
 # Test endpoint for error handling
 @app.route('/test-error-handling', methods=['POST'])

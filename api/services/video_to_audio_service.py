@@ -159,8 +159,8 @@ def convert_video_to_audio(file, input_body):
         # Return success response with download URL
         return {
             'success': True,
-            'export_url': f"/static/audios/{output_filename}",
-            'download_url': f"/download/audios/{output_filename}",
+            'export_url': f"/export/audios/{output_filename}?ngrok-skip-browser-warning=true",
+            'download_url': f"/download/audios/{output_filename}?ngrok-skip-browser-warning=true",
             'filename': output_filename,
             'output_format': output_format,
             'input_format': input_format,

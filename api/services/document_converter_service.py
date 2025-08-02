@@ -119,7 +119,7 @@ def convert_document(file, input_body):
                 'success': True,
                 'message': f'Successfully converted {file_extension.upper()} to {output_format.upper()}',
                 'output_file': output_filename,
-                'download_url': f'/download/documents/{output_filename}',
+                'download_url': f'/download/documents/{output_filename}?ngrok-skip-browser-warning=true',
                 'file_size': file_size,
                 'original_filename': original_filename,
                 'output_format': output_format,

@@ -116,8 +116,8 @@ def convert_image(file, input_body):
         # Return success response
         return {
             'success': True,
-            'export_url': f"/static/images/{output_filename}",
-            'download_url': f"/download/images/{output_filename}",
+            'export_url': f"/export/images/{output_filename}?ngrok-skip-browser-warning=true",
+            'download_url': f"/download/images/{output_filename}?ngrok-skip-browser-warning=true",
             'filename': output_filename,
             'output_format': output_format,
             'input_format': input_format,

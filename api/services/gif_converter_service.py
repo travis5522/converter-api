@@ -198,7 +198,7 @@ def convert_to_gif_simple(file, input_body):
             'success': True,
             'message': f'Successfully converted to GIF (simple method)',
             'output_file': output_filename,
-            'download_url': f'/download/gifs/{output_filename}',
+            'download_url': f'/download/gifs/{output_filename}?ngrok-skip-browser-warning=true',
             'file_size': file_size,
             'original_filename': file.filename,
             'output_format': 'gif',
@@ -273,7 +273,7 @@ def convert_to_gif_basic(file, input_body):
             'success': True,
             'message': 'Successfully converted to GIF (basic method)',
             'output_file': output_filename,
-            'download_url': f'/download/gifs/{output_filename}',
+            'download_url': f'/download/gifs/{output_filename}?ngrok-skip-browser-warning=true',
             'file_size': file_size,
             'original_filename': file.filename,
             'output_format': 'gif',
@@ -457,7 +457,7 @@ def convert_to_gif_two_pass(file, input_body):
             'success': True,
             'message': f'Successfully converted to GIF',
             'output_file': output_filename,
-            'download_url': f'/download/gifs/{output_filename}',
+            'download_url': f'/download/gifs/{output_filename}?ngrok-skip-browser-warning=true',
             'file_size': file_size,
             'original_filename': file.filename,
             'output_format': 'gif',
@@ -649,11 +649,11 @@ def convert_from_gif(file, input_body):
         
         # Determine download URL path based on output format
         if output_format in ['mp4', 'webm']:
-            download_path = f'/download/videos/{output_filename}'
+            download_path = f'/download/videos/{output_filename}?ngrok-skip-browser-warning=true'
         elif output_format in ['png', 'apng']:
-            download_path = f'/download/images/{output_filename}'
+            download_path = f'/download/images/{output_filename}?ngrok-skip-browser-warning=true'
         else:
-            download_path = f'/download/gifs/{output_filename}'
+            download_path = f'/download/gifs/{output_filename}?ngrok-skip-browser-warning=true'
         
         return {
             'success': True,
