@@ -149,14 +149,16 @@ def convert_video(file, input_body):
             if options.get('cut_end') and options['cut_end'] != '00:00:00.00':
                 ffmpeg_cmd += ['-to', options['cut_end']]
             # Explicitly set output format for some containers
-            if output_format in ['webm', 'mkv']:
-                ffmpeg_cmd += ['-f', output_format]
+            if output_format == 'webm':
+                ffmpeg_cmd += ['-f', 'webm']
+            elif output_format == 'mkv':
+                ffmpeg_cmd += ['-f', 'matroska']
         
         # Output file
         ffmpeg_cmd += [output_path]
 
         # Run ffmpeg
-        print(f"Running FFmpeg command: {' '.join(ffmpeg_cmd)}")  # Debug logging
+        # print(f"Running FFmpeg command: {' '.join(ffmpeg_cmd)}")  # Debug logging
         try:
             result = subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=300)
             print(f"FFmpeg stdout: {result.stdout}")  # Debug logging

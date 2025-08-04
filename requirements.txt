@@ -2,8 +2,12 @@ Flask
 Flask-CORS
 ffmpeg-python
 
-# Image processing dependencies (minimal for now)
+# Image processing dependencies
 Pillow>=10.0.0
+Wand>=0.6.10
+cairosvg>=2.7.0
+pycairo>=1.20.0
+PyGObject>=3.42.0
 
 # Document processing dependencies
 PyMuPDF>=1.23.0
@@ -11,6 +15,7 @@ python-docx>=0.8.11
 ebooklib>=0.18
 beautifulsoup4>=4.12.0
 pillow-heif>=0.10.0
+openpyxl>=3.1.0
 
 # Note: System dependencies required:
 # - FFmpeg must be installed for audio/video conversion

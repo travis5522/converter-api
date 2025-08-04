@@ -232,6 +232,8 @@ def svg_convert():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+
 @image_converter_bp.route('/formats', methods=['GET'])
 def get_supported_formats():
     """Get list of supported image formats"""

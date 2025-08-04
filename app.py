@@ -12,8 +12,21 @@ from flask import Response
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'), static_url_path='/static')
 
+# Configure file upload limits (allow up to 500MB uploads)
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static')
+
 # Initialize CORS
 CORS(app)
+
+# Error handler for file size limit exceeded
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle file too large error"""
+    return jsonify({
+        'error': 'File too large',
+        'message': f'File size exceeds maximum allowed size of {app.config["MAX_CONTENT_LENGTH"] // (1024*1024)}MB'
+    }), 413
 
 # Middleware to handle ngrok browser warning
 @app.before_request
