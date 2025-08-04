@@ -156,14 +156,23 @@ def convert_video(file, input_body):
         ffmpeg_cmd += [output_path]
 
         # Run ffmpeg
+        print(f"Running FFmpeg command: {' '.join(ffmpeg_cmd)}")  # Debug logging
         try:
-            result = subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=300)
+            print(f"FFmpeg stdout: {result.stdout}")  # Debug logging
         except subprocess.CalledProcessError as e:
-            error_msg = f"FFmpeg conversion failed: {e.stderr}"
+            print(f"FFmpeg failed with return code {e.returncode}")  # Debug logging
+            print(f"FFmpeg stderr: {e.stderr}")  # Debug logging
+            error_msg = f"FFmpeg conversion failed (return code {e.returncode}): {e.stderr}"
             raise Exception(error_msg)
         except FileNotFoundError:
+            print("FFmpeg binary not found in PATH")  # Debug logging
             raise Exception("FFmpeg not found. Please install FFmpeg and ensure it's in your PATH.")
+        except subprocess.TimeoutExpired:
+            print("FFmpeg command timed out after 300 seconds")  # Debug logging
+            raise Exception("Video conversion timed out. The file might be too large or complex.")
         except Exception as e:
+            print(f"Unexpected FFmpeg error: {str(e)}")  # Debug logging
             raise Exception(f"Unexpected error during conversion: {str(e)}")
 
         # Verify output file exists

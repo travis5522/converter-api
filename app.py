@@ -19,13 +19,28 @@ CORS(app)
 @app.before_request
 def handle_ngrok_headers():
     """Skip ngrok browser warning by checking for ngrok headers"""
-    # Skip ngrok warning by detecting ngrok-specific headers
-    if request.headers.get('ngrok-skip-browser-warning'):
-        pass
-    # Also check for User-Agent containing ngrok
-    user_agent = request.headers.get('User-Agent', '')
-    if 'ngrok' in user_agent.lower():
-        pass
+    # For ngrok free accounts, check if this is the browser warning page
+    if request.headers.get('ngrok-skip-browser-warning') == 'any':
+        return  # Continue with request
+    
+    # Add debug logging for ngrok requests
+    if any(host in request.host for host in ['ngrok.io', 'ngrok-free.app', 'ngrok.app']):
+        print(f"Ngrok request to: {request.method} {request.url}")
+        print(f"Headers: {dict(request.headers)}")
+        
+        # Check if this looks like ngrok's browser warning
+        user_agent = request.headers.get('User-Agent', '')
+        if 'Mozilla' in user_agent and request.method == 'GET' and not request.headers.get('ngrok-skip-browser-warning'):
+            print("Warning: This might be ngrok's browser warning page")
+    
+    # Handle OPTIONS requests for CORS preflight
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, HEAD'
+        response.headers['Access-Control-Allow-Headers'] = '*'
+        response.headers['ngrok-skip-browser-warning'] = 'true'
+        return response
 
 @app.after_request
 def after_request(response):
@@ -54,33 +69,164 @@ def test_cors():
     """Test endpoint to verify CORS configuration"""
     return {'message': 'CORS is working correctly!', 'status': 'success'}
 
+# Health check endpoint to verify FFmpeg installation
+@app.route('/health/ffmpeg', methods=['GET'])
+def check_ffmpeg():
+    """Check if FFmpeg is installed and accessible"""
+    try:
+        import subprocess
+        result = subprocess.run(['ffmpeg', '-version'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            version_line = result.stdout.split('\n')[0] if result.stdout else 'Unknown version'
+            return {
+                'status': 'success',
+                'message': 'FFmpeg is available',
+                'version': version_line
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': 'FFmpeg command failed',
+                'stderr': result.stderr
+            }, 500
+    except FileNotFoundError:
+        return {
+            'status': 'error',
+            'message': 'FFmpeg not found - please install FFmpeg'
+        }, 500
+    except subprocess.TimeoutExpired:
+        return {
+            'status': 'error',
+            'message': 'FFmpeg command timed out'
+        }, 500
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Error checking FFmpeg: {str(e)}'
+        }, 500
+
+# Debug endpoint to check request details
+@app.route('/debug/request', methods=['GET', 'POST'])
+def debug_request():
+    """Debug endpoint to check how requests are being received"""
+    return {
+        'method': request.method,
+        'url': request.url,
+        'headers': dict(request.headers),
+        'args': dict(request.args),
+        'form': dict(request.form),
+        'files': list(request.files.keys()),
+        'remote_addr': request.remote_addr,
+        'host': request.host
+    }
+
+# Test download endpoints
+@app.route('/test/download-endpoints', methods=['GET'])
+def test_download_endpoints():
+    """Test if download endpoints are working and list available files"""
+    static_dir = os.path.join(os.path.dirname(__file__), 'static')
+    
+    result = {
+        'endpoints': {
+            'export': '/export/<file_type>/<filename>',
+            'download': '/download/<file_type>/<filename>', 
+            'ngrok_download': '/ngrok-download/<file_type>/<filename>'
+        },
+        'available_files': {}
+    }
+    
+    # Check each directory for available files
+    for file_type in ['videos', 'images', 'audios', 'documents', 'gifs']:
+        directory = os.path.join(static_dir, file_type)
+        if os.path.exists(directory):
+            files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+            result['available_files'][file_type] = files
+        else:
+            result['available_files'][file_type] = []
+    
+    return jsonify(result)
+
 # Enhanced export endpoint with proper CORS headers
 @app.route('/export/<file_type>/<filename>')
 def export_file(file_type, filename):
     """Export converted files with proper CORS headers (alternative to static serving)"""
+    return _serve_file(file_type, filename, as_attachment=False)
+
+# Download endpoint - forces file download
+@app.route('/download/<file_type>/<filename>')
+def download_file(file_type, filename):
+    """Download converted files with forced download headers"""
+    return _serve_file(file_type, filename, as_attachment=True)
+
+# Ngrok-specific download endpoint with enhanced headers
+@app.route('/ngrok-download/<file_type>/<filename>')
+def ngrok_download_file(file_type, filename):
+    """Download files with ngrok-specific headers and optimizations"""
+    return _serve_file(file_type, filename, as_attachment=True, ngrok_optimized=True)
+
+def _serve_file(file_type, filename, as_attachment=True, ngrok_optimized=False):
+    """Helper function to serve files with proper headers"""
     static_dir = os.path.join(os.path.dirname(__file__), 'static')
     
-    if file_type == 'images':
-        directory = os.path.join(static_dir, 'images')
-    elif file_type == 'videos':
-        directory = os.path.join(static_dir, 'videos')
-    elif file_type == 'audios':
-        directory = os.path.join(static_dir, 'audios')
-    elif file_type == 'documents':
-        directory = os.path.join(static_dir, 'documents')
-    elif file_type == 'gifs':
-        directory = os.path.join(static_dir, 'gifs')
-    else:
-        return {'error': 'Invalid file type'}, 400
+    # Map file types to directories
+    type_mapping = {
+        'images': 'images',
+        'videos': 'videos', 
+        'audios': 'audios',
+        'documents': 'documents',
+        'gifs': 'gifs'
+    }
     
+    if file_type not in type_mapping:
+        return jsonify({'error': 'Invalid file type'}), 400
+    
+    directory = os.path.join(static_dir, type_mapping[file_type])
     file_path = os.path.join(directory, filename)
-    if not os.path.exists(file_path):
-        return {'error': 'File not found'}, 404
     
-    return send_file(
-        file_path,
-        as_attachment=True  # This allows inline viewing
-    )
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+    
+    # Get file info
+    file_size = os.path.getsize(file_path)
+    
+    # Detect MIME type
+    mime_type, _ = mimetypes.guess_type(filename)
+    if not mime_type:
+        mime_type = 'application/octet-stream'
+    
+    try:
+        # Create response
+        response = send_file(
+            file_path,
+            as_attachment=as_attachment,
+            download_name=filename,
+            mimetype=mime_type
+        )
+        
+        # Add standard headers
+        response.headers['Content-Length'] = str(file_size)
+        response.headers['Accept-Ranges'] = 'bytes'
+        
+        # Add ngrok-specific headers
+        if ngrok_optimized:
+            response.headers['ngrok-skip-browser-warning'] = 'true'
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        
+        # Force download headers
+        if as_attachment:
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+        # Add CORS headers for downloads
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Length'
+        
+        return response
+        
+    except Exception as e:
+        return jsonify({'error': f'Error serving file: {str(e)}'}), 500
 
 # Test endpoint for error handling
 @app.route('/test-error-handling', methods=['POST'])
