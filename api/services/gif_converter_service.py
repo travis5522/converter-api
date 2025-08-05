@@ -800,7 +800,7 @@ def convert_from_gif(file, input_body):
             raise ValueError(f"Unsupported output format: {output_format}")
         
         # Generate unique output filename
-        output_filename = str(uuid.uuid4()) + f'.{output_format}'
+            output_filename = str(uuid.uuid4()) + f'.{output_format}'
         
         # Determine output directory based on format
         if output_format in ['mp4', 'webm']:

@@ -17,6 +17,10 @@ beautifulsoup4>=4.12.0
 pillow-heif>=0.10.0
 openpyxl>=3.1.0
 
+# Archive processing dependencies (optional)
+py7zr>=0.20.0
+rarfile>=4.0
+
 # Note: System dependencies required:
 # - FFmpeg must be installed for audio/video conversion
 #   Install FFmpeg: https://ffmpeg.org/download.html
@@ -29,4 +33,9 @@ openpyxl>=3.1.0
 # - Cairo libraries for SVG conversion (cairosvg)
 #   Windows: Included with cairosvg
 #   macOS: brew install cairo
-#   Ubuntu/Debian: sudo apt install libcairo2-dev 
+#   Ubuntu/Debian: sudo apt install libcairo2-dev
+# - Archive tools for full archive format support:
+#   7-Zip: Download from https://www.7-zip.org/
+#   WinRAR/unrar: Download from https://www.rarlab.com/
+#   macOS: brew install p7zip unrar
+#   Ubuntu/Debian: sudo apt install p7zip-full unrar 
