@@ -335,6 +335,10 @@ def convert_images_to_gif_advanced(files, input_body):
             
             # Open and process image
             with Image.open(temp_input.name) as img:
+                # Handle EXIF orientation first (before any other transformations)
+                if options.get('auto_orient', True):
+                    img = ImageOps.exif_transpose(img)
+                
                 # Convert to RGBA for transparency support
                 if img.mode != 'RGBA':
                     img = img.convert('RGBA')
