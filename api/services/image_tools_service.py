@@ -86,38 +86,65 @@ def resize_image(file, input_body):
         options = resize_task.get('options', {})
         
         # Get resize parameters
+        method = options.get('method', 'size')
         width = options.get('width')
         height = options.get('height')
+        width_percent = options.get('width_percent', 100)
+        height_percent = options.get('height_percent', 100)
+        unit = options.get('unit', 'px')
         maintain_aspect = options.get('maintain_aspect', True)
-        
-        if not width and not height:
-            raise Exception("At least width or height must be specified")
         
         # Get output format
         output_format = options.get('output_format', 'png').lower()
         if output_format not in SUPPORTED_IMAGE_FORMATS:
             raise Exception(f"Unsupported output format: {output_format}")
         
-        # Open and resize image
+        # Open image
         img = Image.open(input_path)
+        original_width, original_height = img.size
         
-        if maintain_aspect and width and height:
-            # Calculate aspect ratio
-            img_ratio = img.width / img.height
-            target_ratio = width / height
+        # Calculate new dimensions based on method
+        if method == 'percentage':
+            # Resize by percentage
+            new_width = int(original_width * (width_percent / 100))
+            new_height = int(original_height * (height_percent / 100))
             
-            if img_ratio > target_ratio:
-                # Image is wider, fit to width
-                new_width = width
-                new_height = int(width / img_ratio)
-            else:
-                # Image is taller, fit to height
-                new_height = height
-                new_width = int(height * img_ratio)
-        else:
-            new_width = width or img.width
-            new_height = height or img.height
+        elif method == 'preset':
+            # Use preset dimensions (already calculated on frontend)
+            new_width = width or original_width
+            new_height = height or original_height
+            
+        else:  # method == 'size'
+            # Direct size specification
+            if not width and not height:
+                raise Exception("At least width or height must be specified for size method")
+            
+            new_width = width or original_width
+            new_height = height or original_height
+            
+            # Handle aspect ratio locking for size method
+            if maintain_aspect and width and height:
+                # Calculate aspect ratio
+                img_ratio = original_width / original_height
+                target_ratio = width / height
+                
+                if img_ratio > target_ratio:
+                    # Image is wider, fit to width
+                    new_width = width
+                    new_height = int(width / img_ratio)
+                else:
+                    # Image is taller, fit to height
+                    new_height = height
+                    new_width = int(height * img_ratio)
         
+        # Validate dimensions
+        if new_width <= 0 or new_height <= 0:
+            raise Exception("Invalid dimensions: width and height must be positive")
+        
+        if new_width > 10000 or new_height > 10000:
+            raise Exception("Dimensions too large: maximum 10000x10000 pixels")
+        
+        # Resize image
         resized_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
         # Save resized image
@@ -134,7 +161,9 @@ def resize_image(file, input_body):
             'success': True,
             'message': 'Image resized successfully',
             'output_filename': output_filename,
-            'download_url': f'/download/images/{output_filename}'
+            'download_url': f'/download/images/{output_filename}',
+            'original_size': {'width': original_width, 'height': original_height},
+            'new_size': {'width': new_width, 'height': new_height}
         }
         
     except Exception as e:
