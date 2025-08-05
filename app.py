@@ -6,6 +6,9 @@ from api.controller.audio_to_audio_controller import audio_to_audio_bp
 from api.controller.image_converter_controller import image_converter_bp
 from api.controller.document_converter_controller import document_converter_bp
 from api.controller.gif_converter_controller import gif_converter_bp
+from api.controller.video_tools_controller import video_tools_bp
+from api.controller.image_tools_controller import image_tools_bp
+from api.controller.pdf_tools_controller import pdf_tools_bp
 from api.controller.archive_converter_controller import archive_converter_bp
 import os
 import mimetypes
@@ -309,7 +312,6 @@ app.register_blueprint(audio_to_audio_bp, url_prefix='/api/audio_audio')
 app.register_blueprint(image_converter_bp, url_prefix='/api/image')
 app.register_blueprint(document_converter_bp, url_prefix='/api/document')
 app.register_blueprint(gif_converter_bp, url_prefix='/api/gif')
-app.register_blueprint(archive_converter_bp, url_prefix='/api/archive')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
