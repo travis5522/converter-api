@@ -10,6 +10,7 @@ from api.controller.video_tools_controller import video_tools_bp
 from api.controller.image_tools_controller import image_tools_bp
 from api.controller.pdf_tools_controller import pdf_tools_bp
 from api.controller.archive_converter_controller import archive_converter_bp
+from api.controller.video_compression_controller import video_compression_bp
 import os
 import mimetypes
 from flask import Response
@@ -312,6 +313,7 @@ app.register_blueprint(audio_to_audio_bp, url_prefix='/api/audio_audio')
 app.register_blueprint(image_converter_bp, url_prefix='/api/image')
 app.register_blueprint(document_converter_bp, url_prefix='/api/document')
 app.register_blueprint(gif_converter_bp, url_prefix='/api/gif')
+app.register_blueprint(video_compression_bp, url_prefix='/api/video_compression')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
