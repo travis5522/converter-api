@@ -17,7 +17,7 @@ pillow_heif.register_heif_opener()
 
 # Constants
 EXPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'images')
-SUPPORTED_FORMATS = ['bmp', 'eps', 'gif', 'ico', 'jpeg', 'jpg', 'odd', 'png', 'psd', 'svg', 'tga', 'tiff', 'webp']
+SUPPORTED_FORMATS = ['apng', 'bmp', 'eps', 'gif', 'ico', 'jpeg', 'jpg', 'odd', 'png', 'psd', 'svg', 'tga', 'tiff', 'webp']
 
 # Ensure export directory exists
 os.makedirs(EXPORT_DIR, exist_ok=True)
@@ -179,6 +179,14 @@ def _convert_image_with_pil(input_path, output_path, input_format, output_format
                 success = _convert_to_svg(temp_path, output_path, options)
                 os.remove(temp_path)  # Clean up temp file
                 return success
+                
+            elif output_format.lower() == 'apng':
+                # APNG (Animated PNG) - save as PNG for static images
+                # For single images, APNG is essentially PNG
+                save_kwargs['format'] = 'PNG'
+                save_kwargs['optimize'] = True
+                if options.get('quality'):
+                    save_kwargs['compress_level'] = min(9, max(0, int(options['quality'] / 10)))
                 
             else:
                 # For other formats (EPS, PSD, TGA), try direct conversion

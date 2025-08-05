@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from api.services.gif_converter_service import convert_to_gif, convert_from_gif
+from api.services.gif_converter_service import convert_to_gif, convert_from_gif, convert_images_to_gif_advanced
 import json
 
 gif_converter_bp = Blueprint('gif_converter', __name__)
@@ -288,7 +288,7 @@ def gif_to_apng():
 
 @gif_converter_bp.route('/image-to-gif', methods=['POST'])
 def image_to_gif():
-    """Convert multiple images to GIF animation - specific endpoint"""
+    """Convert multiple images to GIF animation with advanced options"""
     files = request.files.getlist('files')  # Multiple files
     input_body_raw = request.form.get('input_body')
     
@@ -301,25 +301,51 @@ def image_to_gif():
             input_data = json.loads(input_body_raw)
             options = input_data.get('tasks', {}).get('convert', {}).get('options', {})
         
+        # Enhanced input body with advanced GIF options
         input_body = {
             'tasks': {
                 'convert': {
                     'output_format': 'gif',
                     'options': {
-                        'fps': options.get('fps', 2),  # Slower for image sequences
-                        'width': options.get('width', 400),
+                        # Basic options
+                        'fps': options.get('fps', 2),
+                        'width': options.get('width', 480),
+                        'height': options.get('height'),
                         'loop_count': options.get('loop_count', 0),
                         'duration_per_frame': options.get('duration_per_frame', 0.5),
-                        **options
+                        
+                        # Advanced options from frontend
+                        'compression_level': options.get('compression_level', 7),
+                        'alignment': options.get('alignment', 'center'),
+                        'crossfade': options.get('crossfade', False),
+                        'frame_overlap': options.get('frame_overlap', False),
+                        'trim_images': options.get('trim_images', False),
+                        'merge_all': options.get('merge_all', True),
+                        
+                        # Image transformations
+                        'image_transforms': options.get('image_transforms', []),
+                        
+                        # Additional options
+                        'transparency': options.get('transparency', True),
+                        'optimize_background': options.get('optimize_background', True),
+                        
+                        # Pass through any other options
+                        **{k: v for k, v in options.items() if k not in [
+                            'fps', 'width', 'height', 'loop_count', 'duration_per_frame',
+                            'compression_level', 'alignment', 'crossfade', 'frame_overlap',
+                            'trim_images', 'merge_all', 'image_transforms', 'transparency',
+                            'optimize_background'
+                        ]}
                     }
                 }
             }
         }
         
-        # For now, use the first file - in future this could handle multiple files
-        result = convert_to_gif(files[0], input_body)
+        # Convert multiple images to GIF
+        result = convert_images_to_gif_advanced(files, input_body)
         return jsonify(result)
     except Exception as e:
+        print(f"Image to GIF conversion error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @gif_converter_bp.route('/formats', methods=['GET'])

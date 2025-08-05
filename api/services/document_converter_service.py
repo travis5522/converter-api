@@ -410,7 +410,7 @@ def _pdf_to_docx(input_path, output_path, options):
             
             print(f"Professional PDF to DOCX conversion completed successfully")
             return True
-            
+        
         finally:
             # Clean up temporary images
             import shutil
@@ -1522,7 +1522,7 @@ This is a placeholder file.\par}"""
                     writer.writerow([f'From: {input_format.upper()}'])
                     writer.writerow([f'To: {output_format.upper()}'])
                     writer.writerow(['Placeholder file'])
-                return True
+            return True
             
         else:
             # For other formats, copy the input file as placeholder
