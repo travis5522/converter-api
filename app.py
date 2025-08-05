@@ -169,11 +169,15 @@ def export_file(file_type, filename):
     """Export converted files with proper CORS headers (alternative to static serving)"""
     return _serve_file(file_type, filename, as_attachment=False)
 
-# Download endpoint - forces file download
 @app.route('/download/<file_type>/<filename>')
 def download_file(file_type, filename):
-    """Download converted files with forced download headers"""
+    """Download file by type and filename"""
     return _serve_file(file_type, filename, as_attachment=True)
+
+@app.route('/download/videos/<filename>')
+def download_video(filename):
+    """Download video file"""
+    return _serve_file('videos', filename, as_attachment=True)
 
 # Ngrok-specific download endpoint with enhanced headers
 @app.route('/ngrok-download/<file_type>/<filename>')
