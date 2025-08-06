@@ -294,6 +294,9 @@ def get_image_colors(file, input_body):
 
 def rotate_image(file, input_body):
     """Rotate image by specified angle"""
+    print(f"DEBUG: Starting rotate_image function")
+    print(f"DEBUG: Input body: {input_body}")
+    
     # Save uploaded file to a temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_input:
         file.save(temp_input.name)
@@ -307,37 +310,115 @@ def rotate_image(file, input_body):
         rotate_task = input_body['tasks']['rotate']
         options = rotate_task.get('options', {})
         
+        print(f"DEBUG: Options received: {options}")
+        
         # Get rotation parameters
-        angle = options.get('angle', 90)
+        clockwise_rotations = options.get('clockwise_rotations', 0)
+        straighten_angle = options.get('straighten_angle', 0)
+        angle = options.get('angle', 0)  # Legacy support
         expand = options.get('expand', True)
+        
+        print(f"DEBUG: clockwise_rotations: {clockwise_rotations} (type: {type(clockwise_rotations)})")
+        print(f"DEBUG: straighten_angle: {straighten_angle} (type: {type(straighten_angle)})")
+        print(f"DEBUG: angle: {angle}")
+        
+        # Convert and validate parameters
+        try:
+            # Convert to integers/floats and handle any type issues
+            if isinstance(clockwise_rotations, str):
+                clockwise_rotations = int(float(clockwise_rotations))
+            elif isinstance(clockwise_rotations, float):
+                clockwise_rotations = int(clockwise_rotations)
+            elif not isinstance(clockwise_rotations, int):
+                clockwise_rotations = 0
+            
+            if isinstance(straighten_angle, str):
+                straighten_angle = float(straighten_angle)
+            elif not isinstance(straighten_angle, (int, float)):
+                straighten_angle = 0.0
+        except (ValueError, TypeError) as e:
+            print(f"DEBUG: Parameter conversion error: {e}")
+            clockwise_rotations = 0
+            straighten_angle = 0.0
+        
+        print(f"DEBUG: After conversion - clockwise_rotations: {clockwise_rotations}, straighten_angle: {straighten_angle}")
+        
+        # Calculate total angle
+        if 'clockwise_rotations' in options or 'straighten_angle' in options:
+            # Use the new format with clockwise_rotations and straighten_angle
+            total_angle = (clockwise_rotations * 90) + straighten_angle
+        else:
+            # Use the legacy angle parameter
+            total_angle = angle
+        
+        print(f"DEBUG: Calculated total_angle: {total_angle}")
+        
+        # Normalize angle to 0-360 range
+        total_angle = total_angle % 360
+        if total_angle < 0:
+            total_angle += 360
+        
+        print(f"DEBUG: Normalized total_angle: {total_angle}")
         
         # Get output format
         output_format = options.get('output_format', 'png').lower()
         if output_format not in SUPPORTED_IMAGE_FORMATS:
-            raise Exception(f"Unsupported output format: {output_format}")
+            raise Exception(f"Unsupported output format: {output_format}. Supported formats: {', '.join(SUPPORTED_IMAGE_FORMATS)}")
+        
+        print(f"DEBUG: Output format: {output_format}")
         
         # Open and rotate image
-        img = Image.open(input_path)
-        rotated_img = img.rotate(angle, expand=expand)
+        try:
+            img = Image.open(input_path)
+        except Exception as e:
+            raise Exception(f"Failed to open image file: {str(e)}")
+        
+        original_size = img.size
+        print(f"DEBUG: Original image size: {original_size}")
+        
+        # Only rotate if angle is not 0
+        if total_angle != 0:
+            try:
+                rotated_img = img.rotate(total_angle, expand=expand)
+                print(f"DEBUG: Image rotated successfully by {total_angle} degrees")
+            except Exception as e:
+                raise Exception(f"Failed to rotate image: {str(e)}")
+        else:
+            rotated_img = img
+            print(f"DEBUG: No rotation applied (angle is 0)")
+        
+        new_size = rotated_img.size
+        print(f"DEBUG: New image size: {new_size}")
         
         # Save rotated image
         output_filename = str(uuid.uuid4()) + f'.{output_format}'
         output_path = os.path.join(EXPORT_DIR, output_filename)
         
-        if output_format == 'jpg' or output_format == 'jpeg':
-            rotated_img = rotated_img.convert('RGB')
-            rotated_img.save(output_path, 'JPEG', quality=95)
-        else:
-            rotated_img.save(output_path)
+        try:
+            if output_format == 'jpg' or output_format == 'jpeg':
+                rotated_img = rotated_img.convert('RGB')
+                rotated_img.save(output_path, 'JPEG', quality=95)
+            else:
+                rotated_img.save(output_path)
+            print(f"DEBUG: Image saved successfully to {output_path}")
+        except Exception as e:
+            raise Exception(f"Failed to save rotated image: {str(e)}")
         
-        return {
+        result = {
             'success': True,
             'message': 'Image rotated successfully',
             'output_filename': output_filename,
-            'download_url': f'/download/images/{output_filename}'
+            'download_url': f'/download/images/{output_filename}',
+            'original_size': {'width': original_size[0], 'height': original_size[1]},
+            'new_size': {'width': new_size[0], 'height': new_size[1]},
+            'rotation_applied': total_angle
         }
         
+        print(f"DEBUG: Returning result: {result}")
+        return result
+        
     except Exception as e:
+        print(f"DEBUG: Error occurred: {str(e)}")
         raise Exception(f"Rotate image failed: {str(e)}")
     finally:
         # Clean up temporary file
