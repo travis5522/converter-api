@@ -14,6 +14,7 @@ from api.controller.video_compression_controller import video_compression_bp
 from api.controller.audio_compression_controller import audio_compression_bp
 from api.controller.wav_compression_controller import wav_compression_bp
 from api.controller.image_compression_controller import image_compression_bp
+from api.controller.jpeg_compression_controller import jpeg_compression_bp
 import os
 import mimetypes
 from flask import Response
@@ -320,6 +321,7 @@ app.register_blueprint(video_compression_bp, url_prefix='/api/video_compression'
 app.register_blueprint(audio_compression_bp, url_prefix='/api/audio_compression')
 app.register_blueprint(wav_compression_bp, url_prefix='/api/wav_compression')
 app.register_blueprint(image_compression_bp, url_prefix='/api/image_compression')
+app.register_blueprint(jpeg_compression_bp, url_prefix='/api/jpeg_compression')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
