@@ -67,14 +67,21 @@ def compress_video(file, input_body):
         two_pass = options.get('twoPassEncoding', False)
         optimize_web = options.get('optimizeForWeb', True)
         
-        # Generate output filename
+        # Generate output filename - ALWAYS preserve original extension for compression
         input_ext = os.path.splitext(file.filename)[1].lower()
-        # Preserve original format for compression, fallback to mp4 for compatibility
-        output_format = input_ext if input_ext in ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v', '.3gp'] else '.mp4'
+        print(f"Original filename: {file.filename}, extracted extension: '{input_ext}'")
+        # For compression, always keep the same extension as the original file
+        # If no extension found, default to .mp4
+        if not input_ext:
+            input_ext = '.mp4'
+            print(f"No extension found, defaulting to: {input_ext}")
+        output_format = input_ext
         output_filename = str(uuid.uuid4()) + output_format
         output_path = os.path.join(EXPORT_DIR, output_filename)
+        print(f"Final output format: '{output_format}', filename: {output_filename}")
         
         # Adjust codec based on output format for compatibility
+        # For compression, we need to ensure the codec is compatible with the original format
         if output_format == '.webm':
             video_codec = 'vp8' if video_codec not in ['vp8', 'vp9'] else video_codec
             audio_codec = 'vorbis' if audio_codec not in ['vorbis', 'opus'] else audio_codec
@@ -84,6 +91,23 @@ def compress_video(file, input_body):
         elif output_format == '.mov':
             video_codec = 'h264' if video_codec not in ['h264', 'h265'] else video_codec
             audio_codec = 'aac' if audio_codec not in ['aac', 'mp3'] else audio_codec
+        elif output_format == '.mkv':
+            # MKV is a container format, can use various codecs
+            video_codec = 'h264' if video_codec not in ['h264', 'h265', 'vp8', 'vp9'] else video_codec
+            audio_codec = 'aac' if audio_codec not in ['aac', 'mp3', 'vorbis', 'opus'] else audio_codec
+        elif output_format == '.flv':
+            video_codec = 'h264' if video_codec not in ['h264', 'h265'] else video_codec
+            audio_codec = 'mp3' if audio_codec not in ['mp3', 'aac'] else audio_codec
+        elif output_format == '.wmv':
+            video_codec = 'h264' if video_codec not in ['h264', 'h265'] else video_codec
+            audio_codec = 'mp3' if audio_codec not in ['mp3', 'aac'] else audio_codec
+        elif output_format == '.m4v':
+            video_codec = 'h264' if video_codec not in ['h264', 'h265'] else video_codec
+            audio_codec = 'aac' if audio_codec not in ['aac', 'mp3'] else audio_codec
+        elif output_format == '.3gp':
+            video_codec = 'h264' if video_codec not in ['h264', 'h265'] else video_codec
+            audio_codec = 'aac' if audio_codec not in ['aac', 'mp3'] else audio_codec
+        # For any other format, use the user-selected codecs or defaults
         
         # Build FFmpeg command for compression
         ffmpeg_cmd = ['ffmpeg', '-y', '-i', input_path]
@@ -137,9 +161,14 @@ def compress_video(file, input_body):
             elif audio_codec == 'mp3':
                 ffmpeg_cmd += ['-q:a', '2']  # High quality MP3
         
-        # Web optimization (only for MP4 files)
-        if optimize_web and output_format == '.mp4':
-            ffmpeg_cmd += ['-movflags', '+faststart']  # Move metadata to beginning
+        # Web optimization (apply appropriate optimization based on format)
+        if optimize_web:
+            if output_format == '.mp4':
+                ffmpeg_cmd += ['-movflags', '+faststart']  # Move metadata to beginning for MP4
+            elif output_format == '.webm':
+                ffmpeg_cmd += ['-dash', '1']  # Enable DASH for WebM
+            elif output_format == '.mkv':
+                ffmpeg_cmd += ['-fflags', '+genpts']  # Generate presentation timestamps for MKV
         
         # Two-pass encoding for better quality/size ratio
         if two_pass and not remove_audio:
@@ -197,7 +226,7 @@ def compress_video(file, input_body):
                 except:
                     pass  # Ignore cleanup errors
         
-        return {
+        response_data = {
             'success': True,
             'export_url': f"/export/videos/{output_filename}?ngrok-skip-browser-warning=true",
             'download_url': f"/download/videos/{output_filename}?ngrok-skip-browser-warning=true", 
@@ -222,6 +251,9 @@ def compress_video(file, input_body):
             },
             'message': f'Video compressed successfully. Size reduced by {compression_ratio:.1f}%'
         }
+        
+        print(f"Returning response with output_format: '{response_data['output_format']}'")
+        return response_data
         
     except Exception as e:
         # Clean up temp file on error
