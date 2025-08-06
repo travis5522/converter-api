@@ -3,7 +3,7 @@ from api.services.pdf_tools_service import (
     merge_pdfs, split_pdf, flatten_pdf, resize_pdf, unlock_pdf,
     rotate_pdf, protect_pdf, extract_image_from_pdf, remove_pdf_pages,
     extract_pdf_pages, upload_pdf_file, get_pdf_pages, split_pdf_by_file_id,
-    remove_pages_by_file_id
+    remove_pages_by_file_id, extract_all_images_from_pdf
 )
 import json
 import os
@@ -526,6 +526,27 @@ def extract_image_from_pdf_endpoint():
             'error': 'Invalid JSON',
             'message': f'Failed to parse input_body: {str(e)}'
         }), 400
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'Image extraction failed',
+            'message': str(e)
+        }), 500
+
+@pdf_tools_bp.route('/extract-all-images', methods=['POST'])
+def extract_all_images_endpoint():
+    """Extract all images from PDF and return as ZIP file"""
+    file = request.files.get('file')
+    
+    if not file:
+        return jsonify({
+            'error': 'Missing file',
+            'message': 'No file was uploaded'
+        }), 400
+    
+    try:
+        result = extract_all_images_from_pdf(file)
+        return jsonify(result)
         
     except Exception as e:
         return jsonify({

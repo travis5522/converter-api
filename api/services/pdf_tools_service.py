@@ -6,6 +6,7 @@ import fitz  # PyMuPDF
 from PIL import Image
 import io
 import base64
+import zipfile
 
 EXPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'documents')
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'uploads')
@@ -725,6 +726,149 @@ def extract_image_from_pdf(file, input_body):
             try:
                 os.unlink(input_path)
             except:
+                pass
+
+def extract_all_images_from_pdf(file):
+    """Extract all images from all pages of PDF and return as ZIP file"""
+    print(f"[DEBUG] Starting image extraction for file: {file.filename}")
+    
+    # Save uploaded file to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_input:
+        file.save(temp_input.name)
+        input_path = temp_input.name
+        print(f"[DEBUG] File saved to temporary path: {input_path}")
+
+    try:
+        # Open PDF
+        print("[DEBUG] Opening PDF document...")
+        pdf_doc = fitz.open(input_path)
+        total_pages = len(pdf_doc)
+        print(f"[DEBUG] PDF opened successfully. Total pages: {total_pages}")
+        
+        # Create ZIP file
+        zip_filename = str(uuid.uuid4()) + '.zip'
+        zip_path = os.path.join(EXPORT_DIR, zip_filename)
+        print(f"[DEBUG] Creating ZIP file: {zip_path}")
+        
+        extracted_count = 0
+        total_images_found = 0
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            # Extract images from each page
+            for page_num in range(total_pages):
+                print(f"[DEBUG] Processing page {page_num + 1}/{total_pages}")
+                page = pdf_doc[page_num]
+                
+                # Get images from page
+                image_list = page.get_images()
+                page_image_count = len(image_list)
+                print(f"[DEBUG] Found {page_image_count} images on page {page_num + 1}")
+                total_images_found += page_image_count
+                
+                for img_index, img in enumerate(image_list):
+                    print(f"[DEBUG] Processing image {img_index + 1}/{page_image_count} on page {page_num + 1}")
+                    xref = img[0]
+                    pix = fitz.Pixmap(pdf_doc, xref)
+                    
+                    try:
+                        # Handle different image formats with robust alpha channel removal
+                        print(f"[DEBUG] Image format: n={pix.n}, alpha={pix.alpha}")
+                        
+                        if pix.n == 1:  # GRAY
+                            print(f"[DEBUG] Image is GRAY format")
+                            img_data = pix.tobytes("jpeg")
+                        elif pix.n == 3:  # RGB
+                            print(f"[DEBUG] Image is RGB format")
+                            img_data = pix.tobytes("jpeg")
+                        elif pix.n == 4:  # RGBA or CMYK
+                            if pix.alpha:  # RGBA
+                                print(f"[DEBUG] Image is RGBA format, removing alpha channel")
+                                # Create RGB version without alpha - more robust approach
+                                try:
+                                    # First try direct RGB conversion
+                                    rgb_pix = fitz.Pixmap(fitz.csRGB, pix)
+                                    img_data = rgb_pix.tobytes("jpeg")
+                                    rgb_pix = None
+                                except Exception as rgb_error:
+                                    print(f"[DEBUG] Direct RGB conversion failed: {rgb_error}")
+                                    # Fallback: convert to PIL Image and back to remove alpha
+                                    import io
+                                    from PIL import Image
+                                    
+                                    # Convert to PIL Image
+                                    img_bytes = pix.tobytes("png")
+                                    pil_img = Image.open(io.BytesIO(img_bytes))
+                                    
+                                    # Convert to RGB (removes alpha)
+                                    if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                        pil_img = pil_img.convert('RGB')
+                                    
+                                    # Convert back to bytes
+                                    img_buffer = io.BytesIO()
+                                    pil_img.save(img_buffer, format='JPEG', quality=95)
+                                    img_data = img_buffer.getvalue()
+                                    img_buffer.close()
+                            else:  # CMYK
+                                print(f"[DEBUG] Image is CMYK format, converting to RGB")
+                                rgb_pix = fitz.Pixmap(fitz.csRGB, pix)
+                                img_data = rgb_pix.tobytes("jpeg")
+                                rgb_pix = None
+                        else:
+                            print(f"[DEBUG] Unknown image format (n={pix.n}), converting to RGB")
+                            # Convert to RGB as fallback
+                            rgb_pix = fitz.Pixmap(fitz.csRGB, pix)
+                            img_data = rgb_pix.tobytes("jpeg")
+                            rgb_pix = None
+                        
+                        # Create filename for ZIP
+                        img_filename = f"page_{page_num + 1}_image_{img_index + 1}.jpg"
+                        print(f"[DEBUG] Adding to ZIP: {img_filename}")
+                        
+                        # Add to ZIP file
+                        zip_file.writestr(img_filename, img_data)
+                        extracted_count += 1
+                        
+                        print(f"[DEBUG] Image {img_index + 1} on page {page_num + 1} processed successfully")
+                        
+                    except Exception as img_error:
+                        print(f"[DEBUG] Error processing image {img_index + 1} on page {page_num + 1}: {img_error}")
+                        # Continue with next image instead of failing completely
+                        continue
+                    finally:
+                        pix = None
+        
+        pdf_doc.close()
+        print(f"[DEBUG] PDF document closed")
+        print(f"[DEBUG] Total images found: {total_images_found}")
+        print(f"[DEBUG] Total images extracted: {extracted_count}")
+        
+        if extracted_count == 0:
+            print("[DEBUG] No images found in the PDF")
+            raise Exception("No images found in the PDF")
+        
+        print(f"[DEBUG] ZIP file created successfully: {zip_path}")
+        print(f"[DEBUG] Extraction completed successfully")
+        
+        return {
+            'success': True,
+            'message': f'Extracted {extracted_count} images from {total_pages} pages',
+            'zip_filename': zip_filename,
+            'download_url': f'/download/documents/{zip_filename}',
+            'extracted_count': extracted_count,
+            'total_pages': total_pages
+        }
+        
+    except Exception as e:
+        print(f"[DEBUG] Error occurred: {str(e)}")
+        raise Exception(f"Image extraction failed: {str(e)}")
+    finally:
+        # Clean up temporary file
+        if 'input_path' in locals():
+            try:
+                os.unlink(input_path)
+                print(f"[DEBUG] Temporary file cleaned up: {input_path}")
+            except:
+                print(f"[DEBUG] Failed to clean up temporary file: {input_path}")
                 pass
 
 def remove_pdf_pages(file, input_body):
