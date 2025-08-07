@@ -25,14 +25,17 @@ def crop_video(file, input_body):
         crop_task = input_body['tasks']['crop']
         options = crop_task.get('options', {})
         
-        # Get crop parameters
-        x = options.get('x', 0)
-        y = options.get('y', 0)
-        width = options.get('width')
-        height = options.get('height')
+        # Get crop parameters and ensure they are integers
+        x = int(options.get('x', 0))
+        y = int(options.get('y', 0))
+        width = int(options.get('width', 0))
+        height = int(options.get('height', 0))
         
-        if not width or not height:
-            raise Exception("Crop dimensions (width and height) are required")
+        if width <= 0 or height <= 0:
+            raise Exception("Crop dimensions (width and height) must be positive integers")
+        
+        if x < 0 or y < 0:
+            raise Exception("Crop position (x and y) must be non-negative integers")
         
         # Get output format
         output_format = options.get('output_format', 'mp4').lower()
@@ -51,11 +54,19 @@ def crop_video(file, input_body):
             output_path
         ]
         
+        print(f"Executing FFmpeg command: {' '.join(ffmpeg_cmd)}")
+        
         # Execute ffmpeg command
         result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode != 0:
+            print(f"FFmpeg stderr: {result.stderr}")
+            print(f"FFmpeg stdout: {result.stdout}")
             raise Exception(f"FFmpeg error: {result.stderr}")
+        
+        # Verify output file exists and has size > 0
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            raise Exception("FFmpeg did not produce a valid output file")
         
         return {
             'success': True,
@@ -65,6 +76,7 @@ def crop_video(file, input_body):
         }
         
     except Exception as e:
+        print(f"Crop video error: {str(e)}")
         raise Exception(f"Crop video failed: {str(e)}")
     finally:
         # Clean up temporary file
