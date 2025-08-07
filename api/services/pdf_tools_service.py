@@ -539,13 +539,11 @@ def unlock_pdf(file, input_body):
             except:
                 pass
 
-def rotate_pdf(file, input_body):
+def rotate_pdf(file_id, input_body):
     """Rotate PDF pages"""
-    # Save uploaded file to a temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_input:
-        file.save(temp_input.name)
-        input_path = temp_input.name
-
+    print(f"DEBUG: Starting rotate_pdf function")
+    print(f"DEBUG: Input body: {input_body}")
+    
     try:
         # Validate input structure
         if 'tasks' not in input_body or 'rotate' not in input_body['tasks']:
@@ -554,47 +552,138 @@ def rotate_pdf(file, input_body):
         rotate_task = input_body['tasks']['rotate']
         options = rotate_task.get('options', {})
         
-        # Get rotation parameters
-        angle = options.get('angle', 90)  # 90, 180, 270
-        page_range = options.get('page_range', 'all')  # 'all' or specific pages
+        print(f"DEBUG: Options received: {options}")
+        
+        # Check if we have the new per-page rotation format or legacy format
+        pages_rotations = options.get('pages', [])
+        legacy_angle = options.get('angle', None)
+        legacy_page_range = options.get('page_range', None)
+        
+        print(f"DEBUG: Pages rotations: {pages_rotations} (type: {type(pages_rotations)})")
+        print(f"DEBUG: Legacy angle: {legacy_angle}, Legacy page range: {legacy_page_range}")
         
         # Open PDF
-        pdf_doc = fitz.open(input_path)
+        filename = f"{file_id}.pdf"
+        print(f"DEBUG: Opening PDF file: {os.path.join(UPLOAD_DIR, filename)}")
+        pdf_doc = fitz.open(os.path.join(UPLOAD_DIR, filename))
+        print(f"DEBUG: PDF opened successfully, total pages: {len(pdf_doc)}")
         
         # Apply rotation
-        if page_range == 'all':
-            for page_num in range(len(pdf_doc)):
-                page = pdf_doc[page_num]
-                page.set_rotation(angle)
-        else:
-            # Apply to specific pages
-            for page_num in page_range:
-                if 0 <= page_num < len(pdf_doc):
+        print(f"DEBUG: Starting rotation process")
+        
+        if pages_rotations:
+            # New per-page rotation format - recompose PDF with selected pages
+            print(f"DEBUG: Using new per-page rotation format - recomposing PDF with {len(pages_rotations)} page(s)")
+            
+            # Create a new PDF document
+            new_pdf = fitz.open()
+            print(f"DEBUG: Created new PDF document for recomposition")
+            
+            for i, page_rotation in enumerate(pages_rotations):
+                page_number = page_rotation.get('page_number', 1)  # 1-based in frontend
+                rotation_angle = page_rotation.get('rotation', 0)
+                
+                # Convert to 0-based index for PyMuPDF
+                page_index = page_number - 1
+                
+                print(f"DEBUG: Processing page {page_number} (index {page_index}) with rotation {rotation_angle}° - position {i + 1} in output")
+                
+                if 0 <= page_index < len(pdf_doc):
+                    # Get the source page
+                    source_page = pdf_doc[page_index]
+                    original_rotation = source_page.rotation
+                    
+                    # Insert page into new document
+                    new_pdf.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                    
+                    # Get the newly inserted page
+                    new_page = new_pdf[i]
+                    
+                    # Apply the rotation (add to existing rotation)
+                    new_rotation = (original_rotation + rotation_angle) % 360
+                    new_page.set_rotation(new_rotation)
+                    
+                    print(f"DEBUG: Page {page_number} -> Output position {i + 1} - Original rotation: {original_rotation}°, Added: {rotation_angle}°, Final: {new_rotation}°")
+                else:
+                    print(f"DEBUG: Warning - Page {page_number} is out of range (PDF has {len(pdf_doc)} pages), skipping")
+            
+            # Close original PDF and use the new one
+            pdf_doc.close()
+            pdf_doc = new_pdf
+            print(f"DEBUG: PDF recomposition complete - final document has {len(pdf_doc)} pages")
+                    
+        elif legacy_angle is not None:
+            # Legacy format with single angle and page range
+            print(f"DEBUG: Using legacy rotation format - angle: {legacy_angle}°, range: {legacy_page_range}")
+            
+            if legacy_page_range == 'all' or legacy_page_range is None:
+                print(f"DEBUG: Rotating all pages ({len(pdf_doc)} pages)")
+                for page_num in range(len(pdf_doc)):
                     page = pdf_doc[page_num]
-                    page.set_rotation(angle)
+                    original_rotation = page.rotation
+                    page.set_rotation(legacy_angle)
+                    print(f"DEBUG: Page {page_num + 1} - Original rotation: {original_rotation}°, New rotation: {legacy_angle}°")
+            else:
+                print(f"DEBUG: Rotating specific pages: {legacy_page_range}")
+                # Apply to specific pages
+                for page_num in legacy_page_range:
+                    if 0 <= page_num < len(pdf_doc):
+                        page = pdf_doc[page_num]
+                        original_rotation = page.rotation
+                        page.set_rotation(legacy_angle)
+                        print(f"DEBUG: Page {page_num + 1} - Original rotation: {original_rotation}°, New rotation: {legacy_angle}°")
+                    else:
+                        print(f"DEBUG: Warning - Page {page_num + 1} is out of range (PDF has {len(pdf_doc)} pages)")
+        else:
+            # No rotation specified
+            print(f"DEBUG: No rotation parameters found in input")
+            raise Exception("No rotation parameters specified. Expected either 'pages' array or 'angle' parameter.")
         
         # Save rotated PDF
         output_filename = str(uuid.uuid4()) + '.pdf'
         output_path = os.path.join(EXPORT_DIR, output_filename)
-        pdf_doc.save(output_path)
-        pdf_doc.close()
+        print(f"DEBUG: Saving rotated PDF to: {output_path}")
         
-        return {
+        try:
+            pdf_doc.save(output_path)
+            print(f"DEBUG: PDF saved successfully")
+        except Exception as e:
+            print(f"DEBUG: Error saving PDF: {str(e)}")
+            raise Exception(f"Failed to save rotated PDF: {str(e)}")
+        
+        pdf_doc.close()
+        print(f"DEBUG: PDF document closed")
+        
+        # Prepare result message based on operation type
+        if pages_rotations:
+            operation_message = f'PDF recomposed successfully with {len(pages_rotations)} page(s)'
+        else:
+            operation_message = 'PDF rotated successfully'
+        
+        result = {
             'success': True,
-            'message': 'PDF rotated successfully',
+            'message': operation_message,
             'output_filename': output_filename,
-            'download_url': f'/download/documents/{output_filename}'
+            'download_url': f'/download/documents/{output_filename}',
+            'pages_processed': len(pages_rotations) if pages_rotations else len(pdf_doc)
         }
         
+        print(f"DEBUG: Returning result: {result}")
+        return result
+        
     except Exception as e:
+        print(f"DEBUG: Exception occurred: {str(e)}")
         raise Exception(f"PDF rotate failed: {str(e)}")
     finally:
         # Clean up temporary file
-        if 'input_path' in locals():
-            try:
-                os.unlink(input_path)
-            except:
-                pass
+        print(f"DEBUG: Cleaning up temporary files")
+        # if 'filename' in locals():
+        #     try:
+        #         os.unlink(os.path.join(UPLOAD_DIR, filename))
+        #         print(f"DEBUG: Temporary file {os.path.join(UPLOAD_DIR, filename)} deleted successfully")
+        #     except Exception as cleanup_error:
+        #         print(f"DEBUG: Failed to delete temporary file {os.path.join(UPLOAD_DIR, filename)}: {str(cleanup_error)}")
+        #         pass
 
 def protect_pdf(file, input_body):
     """Add password protection to PDF"""

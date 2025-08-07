@@ -371,15 +371,14 @@ def unlock_pdf_endpoint():
             'message': str(e)
         }), 500
 
-@pdf_tools_bp.route('/rotate-pdf', methods=['POST'])
-def rotate_pdf_endpoint():
-    file = request.files.get('file')
+@pdf_tools_bp.route('/rotate-pdf/<file_id>', methods=['POST'])
+def rotate_pdf_endpoint(file_id):
     input_body_raw = request.form.get('input_body')
     
-    if not file:
+    if not file_id:
         return jsonify({
-            'error': 'Missing file',
-            'message': 'No file was uploaded'
+            'error': 'Missing file_id',
+            'message': 'No file_id provided'
         }), 400
     
     if not input_body_raw:
@@ -410,7 +409,7 @@ def rotate_pdf_endpoint():
                 'message': 'tasks must contain a "rotate" object'
             }), 400
         
-        result = rotate_pdf(file, input_body)
+        result = rotate_pdf(file_id, input_body)
         return jsonify(result)
         
     except json.JSONDecodeError as e:
@@ -422,6 +421,37 @@ def rotate_pdf_endpoint():
     except Exception as e:
         return jsonify({
             'error': 'PDF rotate failed',
+            'message': str(e)
+        }), 500
+
+@pdf_tools_bp.route('/download-pdf/<file_id>', methods=['GET'])
+def download_pdf_endpoint(file_id):
+    """Download PDF file by file_id"""
+    try:
+        # Construct file path
+        filename = f"{file_id}.pdf"
+        file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'uploads', filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({
+                'success': False,
+                'error': 'File not found',
+                'message': 'PDF file not found'
+            }), 404
+        
+        # Return file as response
+        from flask import send_file
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'Download failed',
             'message': str(e)
         }), 500
 
