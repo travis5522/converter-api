@@ -16,18 +16,27 @@ from api.controller.wav_compression_controller import wav_compression_bp
 from api.controller.image_compression_controller import image_compression_bp
 from api.controller.jpeg_compression_controller import jpeg_compression_bp
 from api.controller.png_compression_controller import png_compression_bp
+from api.controller.pdf_compression_controller import pdf_compression_bp
+from api.controller.gif_compression_controller import gif_compression_bp
 import os
 import mimetypes
 from flask import Response
 
-app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'), static_url_path='/static')
+app = Flask(__name__, static_folder=None, static_url_path=None)  # Disable default static serving
+# We'll handle static files through our custom routes
+app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static')
 
 # Configure file upload limits (allow up to 500MB uploads)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
-app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static')
+app.config['UPLOAD_FOLDER'] = app.config['STATIC_FOLDER']
 
-# Initialize CORS
-CORS(app)
+# Initialize CORS with explicit configuration
+CORS(app, 
+     origins=["*"],
+     methods=["GET", "POST", "OPTIONS", "HEAD"],
+     allow_headers=["*"],
+     expose_headers=["Content-Disposition", "Content-Type"],
+     supports_credentials=False)
 
 # Error handler for file size limit exceeded
 @app.errorhandler(413)
@@ -91,6 +100,116 @@ def after_request(response):
 def test_cors():
     """Test endpoint to verify CORS configuration"""
     return {'message': 'CORS is working correctly!', 'status': 'success'}
+
+@app.route('/test-static', methods=['GET'])
+def test_static():
+    """Test endpoint to check static files availability"""
+    static_dirs = ['images', 'videos', 'audios', 'documents', 'gifs', 'archives']
+    results = {}
+    
+    for dir_name in static_dirs:
+        dir_path = os.path.join(app.config['STATIC_FOLDER'], dir_name)
+        if os.path.exists(dir_path):
+            files = os.listdir(dir_path)
+            results[dir_name] = {
+                'exists': True,
+                'file_count': len(files),
+                'sample_files': files[:3] if files else []
+            }
+        else:
+            results[dir_name] = {'exists': False}
+    
+    return {'static_directories': results, 'base_url': request.url_root}
+
+# Custom static file serving with CORS headers
+@app.route('/static/<path:subpath>/<filename>')
+def serve_static_with_cors(subpath, filename):
+    """Serve static files with proper CORS headers"""
+    print(f"Static file request: {subpath}/{filename}")
+    print(f"Request method: {request.method}")
+    print(f"Request headers: {dict(request.headers)}")
+    
+    try:
+        # Security check: ensure the subpath is one of our allowed directories
+        allowed_subpaths = ['images', 'videos', 'audios', 'documents', 'gifs', 'archives']
+        if subpath not in allowed_subpaths:
+            print(f"Invalid subpath: {subpath}")
+            return jsonify({'error': 'Invalid path'}), 404
+            
+        static_dir = os.path.join(app.config['STATIC_FOLDER'], subpath)
+        
+        # Check if file exists
+        file_path = os.path.join(static_dir, filename)
+        if not os.path.exists(file_path):
+            print(f"File not found: {file_path}")
+            return jsonify({'error': 'File not found'}), 404
+            
+        print(f"Serving file: {file_path}")
+        
+        # Send the file with proper CORS headers
+        response = send_from_directory(static_dir, filename)
+        
+        # Add CORS headers explicitly
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = '*'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Type'
+        response.headers['ngrok-skip-browser-warning'] = 'true'
+        
+        # Prevent caching issues
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
+        # Set appropriate content type
+        if filename.endswith('.pdf'):
+            response.headers['Content-Type'] = 'application/pdf'
+        elif filename.endswith('.png'):
+            response.headers['Content-Type'] = 'image/png'
+        elif filename.endswith('.jpg') or filename.endswith('.jpeg'):
+            response.headers['Content-Type'] = 'image/jpeg'
+        elif filename.endswith('.mp3'):
+            response.headers['Content-Type'] = 'audio/mpeg'
+        elif filename.endswith('.mp4'):
+            response.headers['Content-Type'] = 'video/mp4'
+        elif filename.endswith('.wav'):
+            response.headers['Content-Type'] = 'audio/wav'
+            
+        print(f"Response headers: {dict(response.headers)}")
+        return response
+        
+    except Exception as e:
+        print(f"Error serving static file: {str(e)}")
+        return jsonify({'error': 'Failed to serve file'}), 500
+
+# Handle OPTIONS requests for static files
+@app.route('/static/<path:subpath>/<filename>', methods=['OPTIONS'])
+def serve_static_options(subpath, filename):
+    """Handle OPTIONS requests for static files"""
+    print(f"OPTIONS request for static file: {subpath}/{filename}")
+    response = make_response()
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = '*'
+    response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Type'
+    response.headers['ngrok-skip-browser-warning'] = 'true'
+    print(f"OPTIONS response headers: {dict(response.headers)}")
+    return response
+
+# Catch-all route for any static file requests that don't match the pattern above
+@app.route('/static/<path:filepath>')
+def serve_static_catchall(filepath):
+    """Catch-all static file serving with CORS"""
+    print(f"Catchall static request: {filepath}")
+    
+    # Split the filepath to get subpath and filename
+    parts = filepath.split('/')
+    if len(parts) >= 2:
+        subpath = parts[0]
+        filename = '/'.join(parts[1:])
+        return serve_static_with_cors(subpath, filename)
+    else:
+        return jsonify({'error': 'Invalid static file path'}), 404
 
 # Health check endpoint to verify FFmpeg installation
 @app.route('/health/ffmpeg', methods=['GET'])
@@ -324,6 +443,8 @@ app.register_blueprint(wav_compression_bp, url_prefix='/api/wav_compression')
 app.register_blueprint(image_compression_bp, url_prefix='/api/image_compression')
 app.register_blueprint(jpeg_compression_bp, url_prefix='/api/jpeg_compression')
 app.register_blueprint(png_compression_bp, url_prefix='/api/png_compression')
+app.register_blueprint(pdf_compression_bp, url_prefix='/api/pdf_compression')
+app.register_blueprint(gif_compression_bp, url_prefix='/api/gif_compression')
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)

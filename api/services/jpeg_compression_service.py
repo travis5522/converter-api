@@ -157,8 +157,18 @@ def compress_jpeg(file, input_body):
         # Get file size
         file_size = os.path.getsize(final_path)
         
-        # Create download URL
-        download_url = f"/static/images/{unique_filename}"
+        # Create download URL (use absolute URL for cross-domain requests)
+        # Try to get the base URL from the request context
+        try:
+            from flask import request
+            base_url = request.url_root.rstrip('/')
+            # Force HTTPS for ngrok URLs to avoid CORS redirect issues
+            if 'ngrok' in base_url and base_url.startswith('http://'):
+                base_url = base_url.replace('http://', 'https://')
+            download_url = f"{base_url}/static/images/{unique_filename}"
+        except:
+            # Fallback to relative URL if request context is not available
+            download_url = f"/static/images/{unique_filename}"
         
         # Calculate compression stats
         compression_ratio = (1 - (file_size / original_size)) * 100
