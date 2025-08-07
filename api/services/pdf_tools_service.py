@@ -1048,4 +1048,140 @@ def extract_pdf_pages(file, input_body):
             try:
                 os.unlink(input_path)
             except:
-                pass 
+                pass
+
+def extract_pages_by_file_id(file_id, page_ranges, merge_output=False, compression_level='none', password=''):
+    """Extract pages from PDF using file_id"""
+    try:
+        # Construct file path
+        filename = f"{file_id}.pdf"
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        
+        if not os.path.exists(file_path):
+            raise Exception("PDF file not found")
+        
+        # Open PDF
+        try:
+            if password:
+                pdf_doc = fitz.open(file_path, password=password)
+            else:
+                pdf_doc = fitz.open(file_path)
+        except:
+            raise Exception("Failed to open PDF. Check if password is correct.")
+        
+        total_pages = len(pdf_doc)
+        
+        # Validate page ranges
+        valid_pages = []
+        for page_num in page_ranges:
+            if isinstance(page_num, int) and 1 <= page_num <= total_pages:
+                valid_pages.append(page_num - 1)  # Convert to 0-based index
+            else:
+                raise Exception(f"Invalid page number: {page_num}. Must be between 1 and {total_pages}")
+        
+        if not valid_pages:
+            raise Exception("No valid pages to extract")
+        
+        # Remove duplicates and sort
+        valid_pages = sorted(list(set(valid_pages)))
+        
+        if merge_output:
+            # Extract all selected pages into one PDF
+            new_doc = fitz.open()
+            for page_index in valid_pages:
+                new_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+            
+            # Save merged PDF with compression if specified
+            output_filename = str(uuid.uuid4()) + '.pdf'
+            output_path = os.path.join(EXPORT_DIR, output_filename)
+            
+            if compression_level != 'none':
+                # Apply compression based on level
+                if compression_level == 'low':
+                    new_doc.save(output_path, garbage=1, deflate=True)
+                elif compression_level == 'medium':
+                    new_doc.save(output_path, garbage=2, deflate=True)
+                elif compression_level == 'high':
+                    new_doc.save(output_path, garbage=3, deflate=True, clean=True)
+                else:
+                    new_doc.save(output_path)
+            else:
+                new_doc.save(output_path)
+            new_doc.close()
+            
+            pdf_doc.close()
+            
+            return {
+                'success': True,
+                'message': f'Extracted {len(valid_pages)} pages into single PDF',
+                'output_filename': output_filename,
+                'download_url': f'/download/documents/{output_filename}'
+            }
+        else:
+            # Extract each page as separate PDF and create a ZIP file
+            extracted_files = []
+            temp_files = []  # Track temporary files for cleanup
+            
+            try:
+                for page_index in valid_pages:
+                    new_doc = fitz.open()
+                    new_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                    
+                    # Save individual PDF with compression if specified
+                    output_filename = str(uuid.uuid4()) + '.pdf'
+                    output_path = os.path.join(EXPORT_DIR, output_filename)
+                    
+                    if compression_level != 'none':
+                        # Apply compression based on level
+                        if compression_level == 'low':
+                            new_doc.save(output_path, garbage=1, deflate=True)
+                        elif compression_level == 'medium':
+                            new_doc.save(output_path, garbage=2, deflate=True)
+                        elif compression_level == 'high':
+                            new_doc.save(output_path, garbage=3, deflate=True, clean=True)
+                        else:
+                            new_doc.save(output_path)
+                    else:
+                        new_doc.save(output_path)
+                    new_doc.close()
+                    
+                    temp_files.append(output_path)
+                    
+                    extracted_files.append({
+                        'filename': output_filename,
+                        'download_url': f'/download/documents/{output_filename}',
+                        'page': page_index + 1
+                    })
+                
+                # Create ZIP file containing all extracted PDFs
+                zip_filename = str(uuid.uuid4()) + '.zip'
+                zip_path = os.path.join(EXPORT_DIR, zip_filename)
+                
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for i, file_path in enumerate(temp_files):
+                        # Add file to ZIP with descriptive name
+                        page_num = valid_pages[i] + 1
+                        zip_name = f'page_{page_num}.pdf'
+                        zipf.write(file_path, zip_name)
+                
+                pdf_doc.close()
+                
+                return {
+                    'success': True,
+                    'message': f'Extracted {len(extracted_files)} pages as separate PDFs in ZIP file',
+                    'download_url': f'/download/documents/{zip_filename}',
+                    'extracted_files': extracted_files,
+                    'zip_filename': zip_filename
+                }
+                
+            finally:
+                # Clean up individual PDF files after creating ZIP
+                for temp_file in temp_files:
+                    try:
+                        if os.path.exists(temp_file):
+                            os.unlink(temp_file)
+                    except:
+                        pass
+        
+    except Exception as e:
+        raise Exception(f"PDF page extraction failed: {str(e)}")

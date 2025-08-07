@@ -3,7 +3,7 @@ from api.services.pdf_tools_service import (
     merge_pdfs, split_pdf, flatten_pdf, resize_pdf, unlock_pdf,
     rotate_pdf, protect_pdf, extract_image_from_pdf, remove_pdf_pages,
     extract_pdf_pages, upload_pdf_file, get_pdf_pages, split_pdf_by_file_id,
-    remove_pages_by_file_id, extract_all_images_from_pdf
+    remove_pages_by_file_id, extract_all_images_from_pdf, extract_pages_by_file_id
 )
 import json
 import os
@@ -702,4 +702,44 @@ def extract_pdf_pages_endpoint():
         return jsonify({
             'error': 'PDF page extraction failed',
             'message': str(e)
-        }), 500 
+        }), 500
+
+@pdf_tools_bp.route('/extract-pages', methods=['POST'])
+def extract_pages_endpoint():
+    """Extract pages from PDF using file_id and page ranges"""
+    try:
+        file_id = request.form.get('file_id')
+        page_ranges_raw = request.form.get('page_ranges')
+        merge_output = request.form.get('merge_output', 'false').lower() == 'true'
+        compression_level = request.form.get('compression_level', 'none')
+        password = request.form.get('password', '')
+        
+        if not file_id:
+            return jsonify({
+                'error': 'Missing file_id',
+                'message': 'file_id is required'
+            }), 400
+        
+        if not page_ranges_raw:
+            return jsonify({
+                'error': 'Missing page_ranges',
+                'message': 'page_ranges is required'
+            }), 400
+        
+        try:
+            page_ranges = json.loads(page_ranges_raw)
+        except json.JSONDecodeError:
+            return jsonify({
+                'error': 'Invalid page_ranges format',
+                'message': 'page_ranges must be a valid JSON array'
+            }), 400
+        
+        # Call the service function
+        result = extract_pages_by_file_id(file_id, page_ranges, merge_output, compression_level, password)
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'error': 'PDF page extraction failed',
+            'message': str(e)
+        }), 500
