@@ -109,6 +109,20 @@ def convert_video(file, input_body):
             if not audio_codec or audio_codec == 'auto':
                 audio_codec = get_default_audio_codec(output_format)
             ffmpeg_cmd += ['-c:a', audio_codec]
+
+            # Resolution (e.g., '1920x1080')
+            if options.get('resolution') and isinstance(options['resolution'], str) and 'x' in options['resolution']:
+                ffmpeg_cmd += ['-s', options['resolution']]
+
+            # Target video bitrate in kbps
+            if options.get('bitrate'):
+                try:
+                    bitrate_kbps = int(options['bitrate'])
+                    if bitrate_kbps > 0:
+                        ffmpeg_cmd += ['-b:v', f"{bitrate_kbps}k"]
+                except Exception:
+                    pass
+
             # Video filters (flip, rotate, fps, etc.)
             vf_filters = []
             if options.get('video_filter_flip') and options['video_filter_flip'] != 'no-change':

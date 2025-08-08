@@ -25,6 +25,9 @@ from flask import Response
 app = Flask(__name__, static_folder=None, static_url_path=None)  # Disable default static serving
 # We'll handle static files through our custom routes
 app.config['STATIC_FOLDER'] = os.path.join(os.path.dirname(__file__), 'static')
+# Determine where the built frontend lives (either static/ or static/dist/)
+frontend_dist_dir = os.path.join(app.config['STATIC_FOLDER'], 'dist')
+app.config['FRONTEND_DIR'] = frontend_dist_dir if os.path.exists(os.path.join(frontend_dist_dir, 'index.html')) else app.config['STATIC_FOLDER']
 
 # Configure file upload limits (allow up to 500MB uploads)
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
@@ -441,6 +444,7 @@ app.register_blueprint(audio_to_audio_bp, url_prefix='/api/audio_audio')
 app.register_blueprint(image_converter_bp, url_prefix='/api/image')
 app.register_blueprint(document_converter_bp, url_prefix='/api/document')
 app.register_blueprint(gif_converter_bp, url_prefix='/api/gif')
+app.register_blueprint(archive_converter_bp, url_prefix='/api/archive')
 app.register_blueprint(video_compression_bp, url_prefix='/api/video_compression')
 app.register_blueprint(audio_compression_bp, url_prefix='/api/audio_compression')
 app.register_blueprint(wav_compression_bp, url_prefix='/api/wav_compression')
@@ -449,6 +453,73 @@ app.register_blueprint(jpeg_compression_bp, url_prefix='/api/jpeg_compression')
 app.register_blueprint(png_compression_bp, url_prefix='/api/png_compression')
 app.register_blueprint(pdf_compression_bp, url_prefix='/api/pdf_compression')
 app.register_blueprint(gif_compression_bp, url_prefix='/api/gif_compression')
+
+@app.route('/', methods=['GET'])
+def serve_frontend_index():
+    """Serve the SPA index.html from the frontend directory."""
+    index_path = os.path.join(app.config['FRONTEND_DIR'], 'index.html')
+    if not os.path.exists(index_path):
+        return jsonify({'error': 'Frontend not found', 'hint': 'Place Vite dist contents (including index.html and assets/) into converter-api/static/ or converter-api/static/dist/'}), 404
+    return send_from_directory(app.config['FRONTEND_DIR'], 'index.html')
+
+
+@app.route('/favicon.ico', methods=['GET'])
+def serve_favicon():
+    """Serve favicon if present in frontend directory."""
+    favicon_path = os.path.join(app.config['FRONTEND_DIR'], 'favicon.ico')
+    if os.path.exists(favicon_path):
+        return send_from_directory(app.config['FRONTEND_DIR'], 'favicon.ico')
+    return jsonify({'error': 'favicon not found'}), 404
+
+
+@app.route('/assets/<path:filename>', methods=['GET'])
+def serve_frontend_assets(filename):
+    """Serve Vite-built assets from <FRONTEND_DIR>/assets with correct content types."""
+    assets_dir = os.path.join(app.config['FRONTEND_DIR'], 'assets')
+    file_path = os.path.join(assets_dir, filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'Asset not found'}), 404
+
+    response = send_from_directory(assets_dir, filename)
+
+    # Best-effort content type
+    mime_type, _ = mimetypes.guess_type(filename)
+    if mime_type:
+        response.headers['Content-Type'] = mime_type
+
+    # Allow caching for hashed assets (optional; after_request sets no-cache globally)
+    if any(ext in filename for ext in ['.js', '.css', '.png', '.jpg', '.jpeg', '.svg', '.woff', '.woff2']):
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+
+    return response
+
+
+@app.route('/<path:path>', methods=['GET'])
+def spa_fallback(path):
+    """SPA fallback: serve real files if they exist; otherwise return index.html.
+    Does not interfere with API/download/static routes.
+    """
+    # Do not hijack known backend routes
+    backend_prefixes = (
+        'api/', 'download/', 'export/', 'ngrok-download/', 'static/', 'health/', 'debug/'
+    )
+    if any(path.startswith(prefix) for prefix in backend_prefixes):
+        return jsonify({'error': 'Not Found'}), 404
+
+    # If a real file exists in FRONTEND_DIR, serve it directly (e.g., /robots.txt)
+    candidate_in_frontend = os.path.join(app.config['FRONTEND_DIR'], path)
+    if os.path.isfile(candidate_in_frontend):
+        # Determine the directory and filename
+        directory = os.path.dirname(candidate_in_frontend)
+        filename = os.path.basename(candidate_in_frontend)
+        return send_from_directory(directory, filename)
+
+    # Otherwise, serve index.html so the SPA can handle the route
+    index_path = os.path.join(app.config['FRONTEND_DIR'], 'index.html')
+    if os.path.exists(index_path):
+        return send_from_directory(app.config['FRONTEND_DIR'], 'index.html')
+
+    return jsonify({'error': 'Frontend not found', 'missing': 'index.html'}), 404
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)

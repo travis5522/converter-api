@@ -51,29 +51,54 @@ def _parse_image_options(options, output_format):
         pass
     elif 'resize' in options:
         internal_options['resize'] = options['resize']
-    
+
+    # Accept generic width/height from frontend (convert strings/numbers)
+    for dim in ['width', 'height']:
+        if dim in options and options[dim] not in (None, '', 'Auto'):
+            try:
+                internal_options[dim] = int(options[dim])
+            except Exception:
+                pass
+
     # Handle PNG specific options
     if output_format == 'png':
         if options.get('png_compression_level') == 'lossy':
             internal_options['compression'] = 'lossy'
-        
         if options.get('png_convert_quality'):
             internal_options['quality'] = options['png_convert_quality']
     
-    # Handle JPEG quality
-    if options.get('quality'):
-        internal_options['quality'] = options['quality']
+    # Handle JPEG/webp/etc. quality
+    if options.get('quality') is not None:
+        try:
+            internal_options['quality'] = int(options['quality'])
+        except Exception:
+            pass
     
-    # Handle auto-orient
-    if options.get('auto-orient'):
+    # Map preserveMetadata (frontend) -> strip_metadata (backend inverse)
+    if 'preserveMetadata' in options:
+        internal_options['strip_metadata'] = not bool(options['preserveMetadata'])
+    
+    # Auto orient
+    if options.get('auto-orient') or options.get('autoOrient'):
         internal_options['auto_orient'] = True
     
-    # Handle strip metadata
+    # Color space: currently informational; may be used by backends that support ICC transforms
+    if options.get('colorSpace'):
+        internal_options['color_space'] = options['colorSpace']
+    
+    # DPI
+    if options.get('dpi'):
+        try:
+            internal_options['dpi'] = int(options['dpi'])
+        except Exception:
+            pass
+    
+    # Handle strip metadata (legacy key)
     if options.get('strip'):
         internal_options['strip_metadata'] = True
     
     # Pass through other options
-    for key in ['preserve_transparency', 'width', 'height']:
+    for key in ['preserve_transparency']:
         if key in options:
             internal_options[key] = options[key]
     

@@ -300,3 +300,65 @@ def targz_to_zip():
     except Exception as e:
         print(f"TARGZ to ZIP conversion error: {str(e)}")
         return jsonify({'error': str(e)}), 500 
+
+# --- Dynamic archive conversion endpoint ---
+@archive_converter_bp.route('/<source>-to-<target>', methods=['POST'])
+def dynamic_archive_convert(source, target):
+    """Dynamically convert <source> archive to <target> archive.
+    Accepts synonyms like tar.gz/tar-gz/targz and returns the exported file URL.
+    Request must be multipart/form-data with fields:
+      - file: the uploaded archive
+      - input_body (optional): JSON string with { tasks: { convert: { options: {...} } } }
+    """
+    try:
+        from api.services.archive_converter_service import SUPPORTED_FORMATS
+
+        def normalize(fmt: str) -> str:
+            f = (fmt or '').strip().lower()
+            if f in ('tar.gz', 'tar-gz', 'targz'): return 'targz'
+            if f in ('tgz',): return 'tgz'
+            if f in ('7z', '7-zip', '7zip'): return '7z'
+            if f in ('zip',): return 'zip'
+            if f in ('rar',): return 'rar'
+            if f in ('tar',): return 'tar'
+            if f in ('gz',): return 'gz'
+            return f
+        
+        src = normalize(source)
+        dst = normalize(target)
+        
+        # Validate file
+        file = request.files.get('file')
+        if not file:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        # Validate formats
+        if src not in SUPPORTED_FORMATS:
+            return jsonify({'error': f'Unsupported source format: {source}', 'normalized': src, 'supported': SUPPORTED_FORMATS}), 400
+        if dst not in SUPPORTED_FORMATS:
+            return jsonify({'error': f'Unsupported target format: {target}', 'normalized': dst, 'supported': SUPPORTED_FORMATS}), 400
+        
+        # Parse optional options
+        options = {}
+        raw = request.form.get('input_body')
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                options = (parsed.get('tasks', {}).get('convert', {}).get('options')) or {}
+            except Exception:
+                options = {}
+        
+        input_body = {
+            'tasks': {
+                'convert': {
+                    'output_format': dst,
+                    'options': options
+                }
+            }
+        }
+        
+        result = convert_archive(file, input_body)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Dynamic archive convert error [{source} -> {target}]: {str(e)}")
+        return jsonify({'error': str(e)}), 500 
