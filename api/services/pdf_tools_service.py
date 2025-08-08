@@ -106,7 +106,7 @@ def get_pdf_pages(file_id):
         raise Exception(f"Failed to get PDF pages: {str(e)}")
 
 def split_pdf_by_file_id(input_body):
-    """Split PDF using file_id"""
+    """Split PDF using file_id with enhanced split modes"""
     try:
         file_id = input_body['file_id']
         split_task = input_body['tasks']['split']
@@ -120,11 +120,11 @@ def split_pdf_by_file_id(input_body):
             raise Exception("PDF file not found")
         
         # Get split parameters
-        split_method = options.get('split_method', 'individual')
-        page_ranges = options.get('page_ranges', '')
-        every_n_pages = options.get('every_n_pages', 2)
+        split_mode = options.get('split_mode', 'manual')
         output_filename = options.get('output_filename', 'split')
         selected_pages = options.get('selected_pages', [])
+        page_ranges = options.get('page_ranges', [])
+        pages_per_file = options.get('pages_per_file', 1)
         
         # Open PDF
         pdf_doc = fitz.open(file_path)
@@ -132,47 +132,8 @@ def split_pdf_by_file_id(input_body):
         
         output_files = []
         
-        if split_method == 'range':
-            # Split by page ranges
-            if page_ranges:
-                # Parse page ranges (e.g., "1-3,5,7-9")
-                ranges = parse_page_ranges(page_ranges, total_pages)
-                for i, page_range in enumerate(ranges):
-                    start_page, end_page = page_range
-                    new_doc = fitz.open()
-                    new_doc.insert_pdf(pdf_doc, from_page=start_page-1, to_page=end_page-1)
-                    
-                    output_filename_gen = f"{output_filename}_part_{i+1}.pdf"
-                    output_path = os.path.join(EXPORT_DIR, output_filename_gen)
-                    new_doc.save(output_path)
-                    new_doc.close()
-                    
-                    output_files.append({
-                        'filename': output_filename_gen,
-                        'download_url': f'/static/documents/{output_filename_gen}',
-                        'pages': f'{start_page}-{end_page}'
-                    })
-            else:
-                # Use selected pages
-                if selected_pages:
-                    for i, page_num in enumerate(selected_pages):
-                        if 1 <= page_num <= total_pages:
-                            new_doc = fitz.open()
-                            new_doc.insert_pdf(pdf_doc, from_page=page_num-1, to_page=page_num-1)
-                            
-                            output_filename_gen = f"{output_filename}_page_{page_num}.pdf"
-                            output_path = os.path.join(EXPORT_DIR, output_filename_gen)
-                            new_doc.save(output_path)
-                            new_doc.close()
-                            
-                            output_files.append({
-                                'filename': output_filename_gen,
-                                'download_url': f'/static/documents/{output_filename_gen}',
-                                'pages': f'{page_num}'
-                            })
-        
-        elif split_method == 'individual':
-            # Split each selected page into individual files
+        if split_mode == 'manual':
+            # Manual selection - split each selected page into individual files
             if selected_pages:
                 for page_num in selected_pages:
                     if 1 <= page_num <= total_pages:
@@ -190,14 +151,37 @@ def split_pdf_by_file_id(input_body):
                             'pages': f'{page_num}'
                         })
         
-        elif split_method == 'every':
+        elif split_mode == 'page_range':
+            # Split by page ranges
+            if page_ranges:
+                for i, page_range in enumerate(page_ranges):
+                    start_page = page_range.get('start', 1)
+                    end_page = page_range.get('end', total_pages)
+                    
+                    # Validate page range
+                    if 1 <= start_page <= end_page <= total_pages:
+                        new_doc = fitz.open()
+                        new_doc.insert_pdf(pdf_doc, from_page=start_page-1, to_page=end_page-1)
+                        
+                        output_filename_gen = f"{output_filename}_range_{i+1}.pdf"
+                        output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                        new_doc.save(output_path)
+                        new_doc.close()
+                        
+                        output_files.append({
+                            'filename': output_filename_gen,
+                            'download_url': f'/static/documents/{output_filename_gen}',
+                            'pages': f'{start_page}-{end_page}'
+                        })
+        
+        elif split_mode == 'fixed_pages':
             # Split every N pages
-            for i in range(0, total_pages, every_n_pages):
-                end_page = min(i + every_n_pages, total_pages)
+            for i in range(0, total_pages, pages_per_file):
+                end_page = min(i + pages_per_file, total_pages)
                 new_doc = fitz.open()
                 new_doc.insert_pdf(pdf_doc, from_page=i, to_page=end_page-1)
                 
-                output_filename_gen = f"{output_filename}_part_{i//every_n_pages + 1}.pdf"
+                output_filename_gen = f"{output_filename}_part_{i//pages_per_file + 1}.pdf"
                 output_path = os.path.join(EXPORT_DIR, output_filename_gen)
                 new_doc.save(output_path)
                 new_doc.close()
@@ -208,14 +192,131 @@ def split_pdf_by_file_id(input_body):
                     'pages': f'{i+1}-{end_page}'
                 })
         
+        elif split_mode == 'odd_even':
+            # Split into odd and even pages
+            odd_pages = []
+            even_pages = []
+            
+            for page_num in range(1, total_pages + 1):
+                if page_num % 2 == 1:  # Odd pages
+                    odd_pages.append(page_num - 1)  # Convert to 0-based index
+                else:  # Even pages
+                    even_pages.append(page_num - 1)  # Convert to 0-based index
+            
+            # Create odd pages PDF
+            if odd_pages:
+                odd_doc = fitz.open()
+                for page_index in odd_pages:
+                    odd_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                
+                odd_filename = f"{output_filename}_odd_pages.pdf"
+                odd_path = os.path.join(EXPORT_DIR, odd_filename)
+                odd_doc.save(odd_path)
+                odd_doc.close()
+                
+                output_files.append({
+                    'filename': odd_filename,
+                    'download_url': f'/static/documents/{odd_filename}',
+                    'pages': f'Odd pages ({len(odd_pages)} pages)'
+                })
+            
+            # Create even pages PDF
+            if even_pages:
+                even_doc = fitz.open()
+                for page_index in even_pages:
+                    even_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                
+                even_filename = f"{output_filename}_even_pages.pdf"
+                even_path = os.path.join(EXPORT_DIR, even_filename)
+                even_doc.save(even_path)
+                even_doc.close()
+                
+                output_files.append({
+                    'filename': even_filename,
+                    'download_url': f'/static/documents/{even_filename}',
+                    'pages': f'Even pages ({len(even_pages)} pages)'
+                })
+        
+        elif split_mode == 'split_half':
+            # Split in half
+            mid_point = (total_pages + 1) // 2
+            
+            # First half
+            first_half_doc = fitz.open()
+            first_half_doc.insert_pdf(pdf_doc, from_page=0, to_page=mid_point-1)
+            
+            first_half_filename = f"{output_filename}_first_half.pdf"
+            first_half_path = os.path.join(EXPORT_DIR, first_half_filename)
+            first_half_doc.save(first_half_path)
+            first_half_doc.close()
+            
+            output_files.append({
+                'filename': first_half_filename,
+                'download_url': f'/static/documents/{first_half_filename}',
+                'pages': f'1-{mid_point}'
+            })
+            
+            # Second half
+            if mid_point < total_pages:
+                second_half_doc = fitz.open()
+                second_half_doc.insert_pdf(pdf_doc, from_page=mid_point, to_page=total_pages-1)
+                
+                second_half_filename = f"{output_filename}_second_half.pdf"
+                second_half_path = os.path.join(EXPORT_DIR, second_half_filename)
+                second_half_doc.save(second_half_path)
+                second_half_doc.close()
+                
+                output_files.append({
+                    'filename': second_half_filename,
+                    'download_url': f'/static/documents/{second_half_filename}',
+                    'pages': f'{mid_point+1}-{total_pages}'
+                })
+        
+        elif split_mode == 'extract_all':
+            # Extract all pages as separate PDFs
+            for page_num in range(1, total_pages + 1):
+                new_doc = fitz.open()
+                new_doc.insert_pdf(pdf_doc, from_page=page_num-1, to_page=page_num-1)
+                
+                output_filename_gen = f"{output_filename}_page_{page_num}.pdf"
+                output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                new_doc.save(output_path)
+                new_doc.close()
+                
+                output_files.append({
+                    'filename': output_filename_gen,
+                    'download_url': f'/static/documents/{output_filename_gen}',
+                    'pages': f'{page_num}'
+                })
+        
         pdf_doc.close()
         
-        return {
-            'success': True,
-            'message': 'PDF split successfully',
-            'output_files': output_files,
-            'download_urls': [f['download_url'] for f in output_files]
-        }
+        # Create ZIP file if multiple files
+        if len(output_files) > 1:
+            zip_filename = f"{output_filename}_split.zip"
+            zip_path = os.path.join(EXPORT_DIR, zip_filename)
+            
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for output_file in output_files:
+                    file_path = os.path.join(EXPORT_DIR, output_file['filename'])
+                    if os.path.exists(file_path):
+                        zipf.write(file_path, output_file['filename'])
+            
+            return {
+                'success': True,
+                'message': f'PDF split successfully into {len(output_files)} files',
+                'output_files': output_files,
+                'zip_filename': zip_filename,
+                'download_url': f'/static/documents/{zip_filename}'
+            }
+        else:
+            # Single file - return direct download
+            return {
+                'success': True,
+                'message': 'PDF split successfully',
+                'output_files': output_files,
+                'download_url': output_files[0]['download_url'] if output_files else None
+            }
         
     except Exception as e:
         raise Exception(f"PDF split failed: {str(e)}")
@@ -263,8 +364,11 @@ def merge_pdfs(files, input_body):
         if len(pdf_files) < 2:
             raise Exception("At least 2 PDF files are required for merging")
         
-        # Create output PDF
-        output_filename = str(uuid.uuid4()) + '.pdf'
+        # Get output filename from options or generate one
+        output_filename = options.get('output_filename', str(uuid.uuid4()) + '.pdf')
+        if not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
         output_path = os.path.join(EXPORT_DIR, output_filename)
         
         # Merge PDFs
@@ -283,9 +387,10 @@ def merge_pdfs(files, input_body):
         
         return {
             'success': True,
-            'message': 'PDFs merged successfully',
+            'message': f'Successfully merged {len(pdf_files)} PDF files',
             'output_filename': output_filename,
-            'download_url': f'/download/documents/{output_filename}'
+            'download_url': f'/download/documents/{output_filename}',
+            'merged_files': len(pdf_files)
         }
         
     except Exception as e:
@@ -1274,3 +1379,505 @@ def extract_pages_by_file_id(file_id, page_ranges, merge_output=False, compressi
         
     except Exception as e:
         raise Exception(f"PDF page extraction failed: {str(e)}")
+
+def split_pdfs_by_file_ids(input_body):
+    """Split multiple PDFs using file_ids with enhanced split modes and split configurations"""
+    try:
+        # Validate input structure
+        if 'tasks' not in input_body or 'split' not in input_body['tasks']:
+            raise Exception("Invalid input structure: missing 'tasks' or 'split'")
+        
+        split_task = input_body['tasks']['split']
+        options = split_task.get('options', {})
+        
+        # Get split parameters
+        split_mode = options.get('split_mode', 'manual')
+        output_filename = options.get('output_filename', 'split')
+        split_configurations = options.get('split_configurations', [])
+        selected_pages = options.get('pages', [])
+        page_ranges = options.get('page_ranges', [])
+        pages_per_file = options.get('pages_per_file', 1)
+        
+        # Check if we have split configurations (new method) or pages (old method)
+        if split_configurations:
+            # New method using split configurations
+            if not isinstance(split_configurations, list):
+                raise Exception("Split configurations must be a list")
+            
+            if len(split_configurations) == 0:
+                raise Exception("At least one split configuration must be specified")
+            
+            output_files = []
+            
+            # Process each split configuration
+            for config_index, config in enumerate(split_configurations):
+                if not isinstance(config, dict):
+                    raise Exception(f"Split configuration at index {config_index} must be a dictionary")
+                
+                config_id = config.get('id', f'config_{config_index}')
+                config_title = config.get('title', f'Split {config_index + 1}')
+                config_pages = config.get('pages', [])
+                
+                if not isinstance(config_pages, list):
+                    raise Exception(f"Pages in split configuration {config_index} must be a list")
+                
+                if len(config_pages) == 0:
+                    continue  # Skip empty configurations
+                
+                # Create a new PDF document for this configuration
+                new_doc = fitz.open()
+                
+                # Add pages from each file in the order specified
+                for page_info in config_pages:
+                    if not isinstance(page_info, dict):
+                        raise Exception(f"Page data in configuration {config_index} must be a dictionary")
+                    
+                    file_id = page_info.get('file_id')
+                    page_number = page_info.get('page_number', 1)
+                    rotation = page_info.get('rotation', 0)
+                    
+                    if not file_id:
+                        raise Exception(f"Missing file_id in page data for configuration {config_index}")
+                    
+                    # Construct file path
+                    filename = f"{file_id}.pdf"
+                    file_path = os.path.join(UPLOAD_DIR, filename)
+                    
+                    if not os.path.exists(file_path):
+                        raise Exception(f"PDF file not found for file_id: {file_id}")
+                    
+                    # Open source PDF
+                    source_doc = fitz.open(file_path)
+                    total_pages = len(source_doc)
+                    
+                    # Validate page number
+                    if 1 <= page_number <= total_pages:
+                        # Insert the page
+                        new_doc.insert_pdf(source_doc, from_page=page_number-1, to_page=page_number-1)
+                        
+                        # Apply rotation if specified
+                        if rotation != 0:
+                            # Get the last inserted page (which is the one we just added)
+                            last_page = new_doc[-1]
+                            # Set rotation (rotation should be 0, 90, 180, or 270)
+                            last_page.set_rotation(rotation)
+                    
+                    source_doc.close()
+                
+                # Save the new document
+                if len(new_doc) > 0:
+                    # Create a safe filename from the title
+                    safe_title = "".join(c for c in config_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                    safe_title = safe_title.replace(' ', '_')
+                    
+                    output_filename_gen = f"{output_filename}_{safe_title}_{config_index + 1}.pdf"
+                    output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                    new_doc.save(output_path)
+                    
+                    output_files.append({
+                        'filename': output_filename_gen,
+                        'download_url': f'/static/documents/{output_filename_gen}',
+                        'title': config_title,
+                        'pages': len(new_doc),
+                        'config_id': config_id
+                    })
+                
+                new_doc.close()
+            
+            # Create ZIP file if multiple files
+            if len(output_files) > 1:
+                zip_filename = f"{output_filename}_split.zip"
+                zip_path = os.path.join(EXPORT_DIR, zip_filename)
+                
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for output_file in output_files:
+                        file_path = os.path.join(EXPORT_DIR, output_file['filename'])
+                        if os.path.exists(file_path):
+                            zipf.write(file_path, output_file['filename'])
+                
+                return {
+                    'success': True,
+                    'message': f'PDFs split successfully into {len(output_files)} files',
+                    'output_files': output_files,
+                    'zip_filename': zip_filename,
+                    'download_url': f'/static/documents/{zip_filename}'
+                }
+            else:
+                # Single file - return direct download
+                return {
+                    'success': True,
+                    'message': 'PDFs split successfully',
+                    'output_files': output_files,
+                    'download_url': output_files[0]['download_url'] if output_files else None
+                }
+        
+        else:
+            # Fallback to old method using pages array
+            if not selected_pages:
+                raise Exception("No pages specified for splitting")
+            
+            # Validate pages data
+            if not isinstance(selected_pages, list):
+                raise Exception("Pages data must be a list")
+            
+            if len(selected_pages) == 0:
+                raise Exception("At least one page must be specified for splitting")
+            
+            # Validate each page entry
+            for i, page_info in enumerate(selected_pages):
+                if not isinstance(page_info, dict):
+                    raise Exception(f"Page data at index {i} must be a dictionary")
+                
+                if 'file_id' not in page_info:
+                    raise Exception(f"Missing file_id in page data at index {i}")
+                
+                if 'page_number' in page_info and not isinstance(page_info['page_number'], int):
+                    raise Exception(f"page_number must be an integer in page data at index {i}")
+            
+            # Group pages by file_id
+            files_data = {}
+            for page_info in selected_pages:
+                file_id = page_info.get('file_id')
+                page_number = page_info.get('page_number', 1)
+                
+                if file_id not in files_data:
+                    files_data[file_id] = []
+                files_data[file_id].append(page_number)
+            
+            output_files = []
+            
+            # Process each file
+            for file_id, page_numbers in files_data.items():
+                # Construct file path
+                filename = f"{file_id}.pdf"
+                file_path = os.path.join(UPLOAD_DIR, filename)
+                
+                if not os.path.exists(file_path):
+                    raise Exception(f"PDF file not found for file_id: {file_id}")
+                
+                # Open PDF
+                pdf_doc = fitz.open(file_path)
+                total_pages = len(pdf_doc)
+                
+                # Validate page numbers
+                valid_pages = [p for p in page_numbers if 1 <= p <= total_pages]
+                if not valid_pages:
+                    pdf_doc.close()
+                    continue
+                
+                if split_mode == 'manual':
+                    # Manual selection - split each selected page into individual files
+                    for page_num in valid_pages:
+                        new_doc = fitz.open()
+                        new_doc.insert_pdf(pdf_doc, from_page=page_num-1, to_page=page_num-1)
+                        
+                        output_filename_gen = f"{output_filename}_file_{file_id}_page_{page_num}.pdf"
+                        output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                        new_doc.save(output_path)
+                        new_doc.close()
+                        
+                        output_files.append({
+                            'filename': output_filename_gen,
+                            'download_url': f'/static/documents/{output_filename_gen}',
+                            'pages': f'{page_num}',
+                            'file_id': file_id
+                        })
+                
+                elif split_mode == 'page_range':
+                    # Split by page ranges
+                    if page_ranges:
+                        for i, page_range in enumerate(page_ranges):
+                            start_page = page_range.get('start', 1)
+                            end_page = page_range.get('end', total_pages)
+                            
+                            # Validate page range
+                            if 1 <= start_page <= end_page <= total_pages:
+                                new_doc = fitz.open()
+                                new_doc.insert_pdf(pdf_doc, from_page=start_page-1, to_page=end_page-1)
+                                
+                                output_filename_gen = f"{output_filename}_file_{file_id}_range_{i+1}.pdf"
+                                output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                                new_doc.save(output_path)
+                                new_doc.close()
+                                
+                                output_files.append({
+                                    'filename': output_filename_gen,
+                                    'download_url': f'/static/documents/{output_filename_gen}',
+                                    'pages': f'{start_page}-{end_page}',
+                                    'file_id': file_id
+                                })
+                
+                elif split_mode == 'fixed_pages':
+                    # Split every N pages
+                    for i in range(0, total_pages, pages_per_file):
+                        end_page = min(i + pages_per_file, total_pages)
+                        new_doc = fitz.open()
+                        new_doc.insert_pdf(pdf_doc, from_page=i, to_page=end_page-1)
+                        
+                        output_filename_gen = f"{output_filename}_file_{file_id}_part_{i//pages_per_file + 1}.pdf"
+                        output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                        new_doc.save(output_path)
+                        new_doc.close()
+                        
+                        output_files.append({
+                            'filename': output_filename_gen,
+                            'download_url': f'/static/documents/{output_filename_gen}',
+                            'pages': f'{i+1}-{end_page}',
+                            'file_id': file_id
+                        })
+                
+                elif split_mode == 'odd_even':
+                    # Split into odd and even pages
+                    odd_pages = []
+                    even_pages = []
+                    
+                    for page_num in range(1, total_pages + 1):
+                        if page_num % 2 == 1:  # Odd pages
+                            odd_pages.append(page_num - 1)  # Convert to 0-based index
+                        else:  # Even pages
+                            even_pages.append(page_num - 1)  # Convert to 0-based index
+                    
+                    # Create odd pages PDF
+                    if odd_pages:
+                        odd_doc = fitz.open()
+                        for page_index in odd_pages:
+                            odd_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                        
+                        odd_filename = f"{output_filename}_file_{file_id}_odd_pages.pdf"
+                        odd_path = os.path.join(EXPORT_DIR, odd_filename)
+                        odd_doc.save(odd_path)
+                        odd_doc.close()
+                        
+                        output_files.append({
+                            'filename': odd_filename,
+                            'download_url': f'/static/documents/{odd_filename}',
+                            'pages': f'Odd pages ({len(odd_pages)} pages)',
+                            'file_id': file_id
+                        })
+                    
+                    # Create even pages PDF
+                    if even_pages:
+                        even_doc = fitz.open()
+                        for page_index in even_pages:
+                            even_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                        
+                        even_filename = f"{output_filename}_file_{file_id}_even_pages.pdf"
+                        even_path = os.path.join(EXPORT_DIR, even_filename)
+                        even_doc.save(even_path)
+                        even_doc.close()
+                        
+                        output_files.append({
+                            'filename': even_filename,
+                            'download_url': f'/static/documents/{even_filename}',
+                            'pages': f'Even pages ({len(even_pages)} pages)',
+                            'file_id': file_id
+                        })
+                
+                elif split_mode == 'split_half':
+                    # Split in half
+                    mid_point = (total_pages + 1) // 2
+                    
+                    # First half
+                    first_half_doc = fitz.open()
+                    first_half_doc.insert_pdf(pdf_doc, from_page=0, to_page=mid_point-1)
+                    
+                    first_half_filename = f"{output_filename}_file_{file_id}_first_half.pdf"
+                    first_half_path = os.path.join(EXPORT_DIR, first_half_filename)
+                    first_half_doc.save(first_half_path)
+                    first_half_doc.close()
+                    
+                    output_files.append({
+                        'filename': first_half_filename,
+                        'download_url': f'/static/documents/{first_half_filename}',
+                        'pages': f'1-{mid_point}',
+                        'file_id': file_id
+                    })
+                    
+                    # Second half
+                    if mid_point < total_pages:
+                        second_half_doc = fitz.open()
+                        second_half_doc.insert_pdf(pdf_doc, from_page=mid_point, to_page=total_pages-1)
+                        
+                        second_half_filename = f"{output_filename}_file_{file_id}_second_half.pdf"
+                        second_half_path = os.path.join(EXPORT_DIR, second_half_filename)
+                        second_half_doc.save(second_half_path)
+                        second_half_doc.close()
+                        
+                        output_files.append({
+                            'filename': second_half_filename,
+                            'download_url': f'/static/documents/{second_half_filename}',
+                            'pages': f'{mid_point+1}-{total_pages}',
+                            'file_id': file_id
+                        })
+                
+                elif split_mode == 'extract_all':
+                    # Extract all pages as separate PDFs
+                    for page_num in range(1, total_pages + 1):
+                        new_doc = fitz.open()
+                        new_doc.insert_pdf(pdf_doc, from_page=page_num-1, to_page=page_num-1)
+                        
+                        output_filename_gen = f"{output_filename}_file_{file_id}_page_{page_num}.pdf"
+                        output_path = os.path.join(EXPORT_DIR, output_filename_gen)
+                        new_doc.save(output_path)
+                        new_doc.close()
+                        
+                        output_files.append({
+                            'filename': output_filename_gen,
+                            'download_url': f'/static/documents/{output_filename_gen}',
+                            'pages': f'{page_num}',
+                            'file_id': file_id
+                        })
+                
+                pdf_doc.close()
+            
+            # Create ZIP file if multiple files
+            if len(output_files) > 1:
+                zip_filename = f"{output_filename}_split.zip"
+                zip_path = os.path.join(EXPORT_DIR, zip_filename)
+                
+                with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                    for output_file in output_files:
+                        file_path = os.path.join(EXPORT_DIR, output_file['filename'])
+                        if os.path.exists(file_path):
+                            zipf.write(file_path, output_file['filename'])
+                
+                return {
+                    'success': True,
+                    'message': f'PDFs split successfully into {len(output_files)} files',
+                    'output_files': output_files,
+                    'zip_filename': zip_filename,
+                    'download_url': f'/static/documents/{zip_filename}'
+                }
+            else:
+                # Single file - return direct download
+                return {
+                    'success': True,
+                    'message': 'PDFs split successfully',
+                    'output_files': output_files,
+                    'download_url': output_files[0]['download_url'] if output_files else None
+                }
+        
+    except Exception as e:
+        raise Exception(f"PDF split failed: {str(e)}")
+
+def merge_pdfs_by_file_ids(input_body):
+    """Merge PDFs using file_ids with support for page selection and rotation"""
+    try:
+        # Validate input structure
+        if 'tasks' not in input_body or 'merge' not in input_body['tasks']:
+            raise Exception("Invalid input structure: missing 'tasks' or 'merge'")
+        
+        merge_task = input_body['tasks']['merge']
+        options = merge_task.get('options', {})
+        
+        # Get page selection data
+        pages_data = options.get('pages', [])
+        if not pages_data:
+            raise Exception("No pages specified for merging")
+        
+        # Validate pages data
+        if not isinstance(pages_data, list):
+            raise Exception("Pages data must be a list")
+        
+        if len(pages_data) == 0:
+            raise Exception("At least one page must be specified for merging")
+        
+        # Validate each page entry
+        for i, page_info in enumerate(pages_data):
+            if not isinstance(page_info, dict):
+                raise Exception(f"Page data at index {i} must be a dictionary")
+            
+            if 'file_id' not in page_info:
+                raise Exception(f"Missing file_id in page data at index {i}")
+            
+            if 'page_number' in page_info and not isinstance(page_info['page_number'], int):
+                raise Exception(f"page_number must be an integer in page data at index {i}")
+            
+            if 'rotation' in page_info and not isinstance(page_info['rotation'], int):
+                raise Exception(f"rotation must be an integer in page data at index {i}")
+        
+        # Get output filename from options or generate one
+        output_filename = options.get('output_filename', str(uuid.uuid4()) + '.pdf')
+        if not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        output_path = os.path.join(EXPORT_DIR, output_filename)
+        
+        # Merge PDFs
+        merger = fitz.open()
+        
+        for page_info in pages_data:
+            file_id = page_info.get('file_id')
+            page_number = page_info.get('page_number', 1)
+            rotation = page_info.get('rotation', 0)
+            
+            if not file_id:
+                raise Exception("Missing file_id in page data")
+            
+            # Construct file path
+            filename = f"{file_id}.pdf"
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            
+            if not os.path.exists(file_path):
+                raise Exception(f"PDF file not found for file_id: {file_id}")
+            
+            # Open PDF
+            pdf_doc = fitz.open(file_path)
+            total_pages = len(pdf_doc)
+            
+            # Validate page number
+            if page_number < 1 or page_number > total_pages:
+                pdf_doc.close()
+                raise Exception(f"Invalid page number {page_number} for file {file_id} (total pages: {total_pages})")
+            
+            # Get the specific page (0-indexed)
+            page_index = page_number - 1
+            page = pdf_doc[page_index]
+            
+            # Apply rotation if specified
+            if rotation != 0:
+                # Create a new document with just this rotated page
+                temp_doc = fitz.open()
+                temp_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                
+                # Apply rotation to the page
+                temp_doc[0].set_rotation(rotation)
+                
+                # Insert the rotated page into the merger
+                merger.insert_pdf(temp_doc)
+                temp_doc.close()
+            else:
+                # Insert the page without rotation
+                merger.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+            
+            pdf_doc.close()
+        
+        # Get compression level from options
+        compression_level = options.get('compression_level', 'none')
+        
+        # Save merged PDF with compression if specified
+        if compression_level != 'none':
+            if compression_level == 'low':
+                merger.save(output_path, garbage=1, deflate=True)
+            elif compression_level == 'medium':
+                merger.save(output_path, garbage=2, deflate=True)
+            elif compression_level == 'high':
+                merger.save(output_path, garbage=3, deflate=True, clean=True)
+            else:
+                merger.save(output_path)
+        else:
+            merger.save(output_path)
+        
+        merger.close()
+        
+        return {
+            'success': True,
+            'message': f'Successfully merged {len(pages_data)} pages',
+            'output_filename': output_filename,
+            'download_url': f'/download/documents/{output_filename}',
+            'merged_pages': len(pages_data),
+            'compression_level': compression_level
+        }
+        
+    except Exception as e:
+        raise Exception(f"PDF merge failed: {str(e)}")
