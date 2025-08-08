@@ -4,7 +4,7 @@ from api.services.pdf_tools_service import (
     rotate_pdf, protect_pdf, extract_image_from_pdf, remove_pdf_pages,
     extract_pdf_pages, upload_pdf_file, get_pdf_pages, split_pdf_by_file_id,
     remove_pages_by_file_id, extract_all_images_from_pdf, extract_pages_by_file_id,
-    merge_pdfs_by_file_ids, UPLOAD_DIR
+    merge_pdfs_by_file_ids, split_pdfs_by_file_ids, UPLOAD_DIR
 )
 import fitz  # PyMuPDF
 import json
@@ -348,6 +348,50 @@ def split_pdf_endpoint():
             
             result = split_pdf_by_file_id(input_body)
             return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': 'PDF split failed',
+            'message': str(e)
+        }), 500
+
+@pdf_tools_bp.route('/split-pdfs', methods=['POST'])
+def split_pdfs_endpoint():
+    """Split multiple PDFs using file_ids with enhanced split modes"""
+    try:
+        if not request.is_json:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid content type',
+                'message': 'Request must be JSON'
+            }), 400
+        
+        input_body = request.get_json()
+        
+        if not input_body:
+            return jsonify({
+                'success': False,
+                'error': 'Missing input data',
+                'message': 'No JSON body provided'
+            }), 400
+        
+        if 'tasks' not in input_body:
+            return jsonify({
+                'success': False,
+                'error': 'Missing tasks',
+                'message': 'input_body must contain a "tasks" object'
+            }), 400
+        
+        if 'split' not in input_body['tasks']:
+            return jsonify({
+                'success': False,
+                'error': 'Missing split task',
+                'message': 'tasks must contain a "split" object'
+            }), 400
+        
+        result = split_pdfs_by_file_ids(input_body)
+        return jsonify(result)
         
     except Exception as e:
         return jsonify({
