@@ -436,6 +436,7 @@ def test_error_handling():
             'error': 'Test failed',
             'message': str(e)
         }), 500
+        
 
 # Register blueprints for each conversion type
 app.register_blueprint(video_to_video_bp, url_prefix='/api/video_video')
