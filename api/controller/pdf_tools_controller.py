@@ -3,8 +3,10 @@ from api.services.pdf_tools_service import (
     merge_pdfs, split_pdf, flatten_pdf, resize_pdf, unlock_pdf,
     rotate_pdf, protect_pdf, extract_image_from_pdf, remove_pdf_pages,
     extract_pdf_pages, upload_pdf_file, get_pdf_pages, split_pdf_by_file_id,
-    remove_pages_by_file_id, extract_all_images_from_pdf, extract_pages_by_file_id
+    remove_pages_by_file_id, extract_all_images_from_pdf, extract_pages_by_file_id,
+    merge_pdfs_by_file_ids, UPLOAD_DIR
 )
+import fitz  # PyMuPDF
 import json
 import os
 
@@ -12,54 +14,199 @@ pdf_tools_bp = Blueprint('pdf_tools', __name__)
 
 @pdf_tools_bp.route('/merge-pdfs', methods=['POST'])
 def merge_pdfs_endpoint():
-    files = request.files.getlist('files')
-    input_body_raw = request.form.get('input_body')
-    
-    if not files:
-        return jsonify({
-            'error': 'Missing files',
-            'message': 'No PDF files were uploaded'
-        }), 400
-    
-    if not input_body_raw:
-        return jsonify({
-            'error': 'Missing input data',
-            'message': 'No input_body provided'
-        }), 400
-    
+    """Merge PDFs with support for both file uploads and file_id based merging"""
     try:
-        input_body = json.loads(input_body_raw)
+        # Check if this is a file upload (old method) or file_id (new method)
+        files = request.files.getlist('files')
+        input_body_raw = request.form.get('input_body')
         
-        # Validate input structure
-        if not isinstance(input_body, dict):
+        # Handle JSON request (new method)
+        if request.content_type and 'application/json' in request.content_type:
+            try:
+                input_body = request.get_json()
+                if not input_body:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Invalid JSON',
+                        'message': 'Request body must be valid JSON'
+                    }), 400
+                
+                # Validate input structure
+                if not isinstance(input_body, dict):
+                    return jsonify({
+                        'success': False,
+                        'error': 'Invalid input format',
+                        'message': 'input_body must be a valid JSON object'
+                    }), 400
+                
+                if 'tasks' not in input_body:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Missing tasks',
+                        'message': 'input_body must contain a "tasks" object'
+                    }), 400
+                
+                if 'merge' not in input_body['tasks']:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Missing merge task',
+                        'message': 'tasks must contain a "merge" object'
+                    }), 400
+                
+                # Call the improved merge service
+                result = merge_pdfs_by_file_ids(input_body)
+                return jsonify(result)
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': 'JSON processing failed',
+                    'message': str(e)
+                }), 400
+        
+        # Handle form data (old method)
+        elif files and input_body_raw:
+            if not files:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing files',
+                    'message': 'No PDF files were uploaded'
+                }), 400
+            
+            if not input_body_raw:
+                return jsonify({
+                    'success': False,
+                    'error': 'Missing input data',
+                    'message': 'No input_body provided'
+                }), 400
+            
+            try:
+                input_body = json.loads(input_body_raw)
+                
+                # Validate input structure
+                if not isinstance(input_body, dict):
+                    return jsonify({
+                        'success': False,
+                        'error': 'Invalid input format',
+                        'message': 'input_body must be a valid JSON object'
+                    }), 400
+                
+                if 'tasks' not in input_body:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Missing tasks',
+                        'message': 'input_body must contain a "tasks" object'
+                    }), 400
+                
+                if 'merge' not in input_body['tasks']:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Missing merge task',
+                        'message': 'tasks must contain a "merge" object'
+                    }), 400
+                
+                result = merge_pdfs(files, input_body)
+                return jsonify(result)
+                
+            except json.JSONDecodeError as e:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid JSON',
+                    'message': f'Failed to parse input_body: {str(e)}'
+                }), 400
+                
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': 'PDF merge failed',
+                    'message': str(e)
+                }), 500
+        
+        else:
             return jsonify({
-                'error': 'Invalid input format',
-                'message': 'input_body must be a valid JSON object'
+                'success': False,
+                'error': 'Invalid request format',
+                'message': 'Request must be either JSON with file_ids or form data with files'
             }), 400
-        
-        if 'tasks' not in input_body:
-            return jsonify({
-                'error': 'Missing tasks',
-                'message': 'input_body must contain a "tasks" object'
-            }), 400
-        
-        if 'merge' not in input_body['tasks']:
-            return jsonify({
-                'error': 'Missing merge task',
-                'message': 'tasks must contain a "merge" object'
-            }), 400
-        
-        result = merge_pdfs(files, input_body)
-        return jsonify(result)
-        
-    except json.JSONDecodeError as e:
+            
+    except Exception as e:
         return jsonify({
-            'error': 'Invalid JSON',
-            'message': f'Failed to parse input_body: {str(e)}'
-        }), 400
+            'success': False,
+            'error': 'PDF merge failed',
+            'message': str(e)
+        }), 500
+
+@pdf_tools_bp.route('/merge-by-file-ids', methods=['POST'])
+def merge_by_file_ids_endpoint():
+    """Simplified endpoint to merge PDFs by file_ids"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid JSON',
+                'message': 'Request body must be valid JSON'
+            }), 400
+        
+        # Validate required fields
+        file_ids = data.get('file_ids', [])
+        if not file_ids or not isinstance(file_ids, list):
+            return jsonify({
+                'success': False,
+                'error': 'Missing file_ids',
+                'message': 'file_ids must be a non-empty list'
+            }), 400
+        
+        # Optional parameters
+        output_filename = data.get('output_filename', '')
+        compression_level = data.get('compression_level', 'none')
+        
+        # Create simplified input structure for the service
+        input_body = {
+            'tasks': {
+                'merge': {
+                    'options': {
+                        'output_filename': output_filename,
+                        'compression_level': compression_level,
+                        'pages': []
+                    }
+                }
+            }
+        }
+        
+        # Convert file_ids to page data (merge all pages from each file)
+        for file_id in file_ids:
+            # Get file info to determine total pages
+            filename = f"{file_id}.pdf"
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            
+            if not os.path.exists(file_path):
+                return jsonify({
+                    'success': False,
+                    'error': 'File not found',
+                    'message': f'PDF file not found for file_id: {file_id}'
+                }), 404
+            
+            # Open PDF to get page count
+            pdf_doc = fitz.open(file_path)
+            total_pages = len(pdf_doc)
+            pdf_doc.close()
+            
+            # Add all pages from this file
+            for page_num in range(1, total_pages + 1):
+                input_body['tasks']['merge']['options']['pages'].append({
+                    'file_id': file_id,
+                    'page_number': page_num,
+                    'rotation': 0
+                })
+        
+        # Call the merge service
+        result = merge_pdfs_by_file_ids(input_body)
+        return jsonify(result)
         
     except Exception as e:
         return jsonify({
+            'success': False,
             'error': 'PDF merge failed',
             'message': str(e)
         }), 500

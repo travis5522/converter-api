@@ -263,8 +263,11 @@ def merge_pdfs(files, input_body):
         if len(pdf_files) < 2:
             raise Exception("At least 2 PDF files are required for merging")
         
-        # Create output PDF
-        output_filename = str(uuid.uuid4()) + '.pdf'
+        # Get output filename from options or generate one
+        output_filename = options.get('output_filename', str(uuid.uuid4()) + '.pdf')
+        if not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
         output_path = os.path.join(EXPORT_DIR, output_filename)
         
         # Merge PDFs
@@ -283,9 +286,10 @@ def merge_pdfs(files, input_body):
         
         return {
             'success': True,
-            'message': 'PDFs merged successfully',
+            'message': f'Successfully merged {len(pdf_files)} PDF files',
             'output_filename': output_filename,
-            'download_url': f'/download/documents/{output_filename}'
+            'download_url': f'/download/documents/{output_filename}',
+            'merged_files': len(pdf_files)
         }
         
     except Exception as e:
@@ -1274,3 +1278,125 @@ def extract_pages_by_file_id(file_id, page_ranges, merge_output=False, compressi
         
     except Exception as e:
         raise Exception(f"PDF page extraction failed: {str(e)}")
+
+def merge_pdfs_by_file_ids(input_body):
+    """Merge PDFs using file_ids with support for page selection and rotation"""
+    try:
+        # Validate input structure
+        if 'tasks' not in input_body or 'merge' not in input_body['tasks']:
+            raise Exception("Invalid input structure: missing 'tasks' or 'merge'")
+        
+        merge_task = input_body['tasks']['merge']
+        options = merge_task.get('options', {})
+        
+        # Get page selection data
+        pages_data = options.get('pages', [])
+        if not pages_data:
+            raise Exception("No pages specified for merging")
+        
+        # Validate pages data
+        if not isinstance(pages_data, list):
+            raise Exception("Pages data must be a list")
+        
+        if len(pages_data) == 0:
+            raise Exception("At least one page must be specified for merging")
+        
+        # Validate each page entry
+        for i, page_info in enumerate(pages_data):
+            if not isinstance(page_info, dict):
+                raise Exception(f"Page data at index {i} must be a dictionary")
+            
+            if 'file_id' not in page_info:
+                raise Exception(f"Missing file_id in page data at index {i}")
+            
+            if 'page_number' in page_info and not isinstance(page_info['page_number'], int):
+                raise Exception(f"page_number must be an integer in page data at index {i}")
+            
+            if 'rotation' in page_info and not isinstance(page_info['rotation'], int):
+                raise Exception(f"rotation must be an integer in page data at index {i}")
+        
+        # Get output filename from options or generate one
+        output_filename = options.get('output_filename', str(uuid.uuid4()) + '.pdf')
+        if not output_filename.endswith('.pdf'):
+            output_filename += '.pdf'
+        
+        output_path = os.path.join(EXPORT_DIR, output_filename)
+        
+        # Merge PDFs
+        merger = fitz.open()
+        
+        for page_info in pages_data:
+            file_id = page_info.get('file_id')
+            page_number = page_info.get('page_number', 1)
+            rotation = page_info.get('rotation', 0)
+            
+            if not file_id:
+                raise Exception("Missing file_id in page data")
+            
+            # Construct file path
+            filename = f"{file_id}.pdf"
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            
+            if not os.path.exists(file_path):
+                raise Exception(f"PDF file not found for file_id: {file_id}")
+            
+            # Open PDF
+            pdf_doc = fitz.open(file_path)
+            total_pages = len(pdf_doc)
+            
+            # Validate page number
+            if page_number < 1 or page_number > total_pages:
+                pdf_doc.close()
+                raise Exception(f"Invalid page number {page_number} for file {file_id} (total pages: {total_pages})")
+            
+            # Get the specific page (0-indexed)
+            page_index = page_number - 1
+            page = pdf_doc[page_index]
+            
+            # Apply rotation if specified
+            if rotation != 0:
+                # Create a new document with just this rotated page
+                temp_doc = fitz.open()
+                temp_doc.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+                
+                # Apply rotation to the page
+                temp_doc[0].set_rotation(rotation)
+                
+                # Insert the rotated page into the merger
+                merger.insert_pdf(temp_doc)
+                temp_doc.close()
+            else:
+                # Insert the page without rotation
+                merger.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+            
+            pdf_doc.close()
+        
+        # Get compression level from options
+        compression_level = options.get('compression_level', 'none')
+        
+        # Save merged PDF with compression if specified
+        if compression_level != 'none':
+            if compression_level == 'low':
+                merger.save(output_path, garbage=1, deflate=True)
+            elif compression_level == 'medium':
+                merger.save(output_path, garbage=2, deflate=True)
+            elif compression_level == 'high':
+                merger.save(output_path, garbage=3, deflate=True, clean=True)
+            else:
+                merger.save(output_path)
+        else:
+            merger.save(output_path)
+        
+        merger.close()
+        
+        return {
+            'success': True,
+            'message': f'Successfully merged {len(pages_data)} pages',
+            'output_filename': output_filename,
+            'download_url': f'/download/documents/{output_filename}',
+            'merged_pages': len(pages_data),
+            'compression_level': compression_level
+        }
+        
+    except Exception as e:
+        raise Exception(f"PDF merge failed: {str(e)}")
