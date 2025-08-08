@@ -10,6 +10,8 @@ import tempfile
 import json
 from PIL import Image
 
+
+
 # Constants
 EXPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'documents')
 SUPPORTED_FORMATS = ['doc', 'docx', 'epub', 'html', 'jpg', 'jpeg', 'heic', 'odt', 'pdf', 'png', 'ppt', 'pptx', 'ps', 'rtf', 'txt', 'xls', 'xlsx']
